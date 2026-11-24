@@ -1,0 +1,10 @@
+bin/
+obj/
+Release/
+scratch/
+*.user
+*.suo
+*.dll
+*.pdb
+!Assets/
+null
