@@ -1,0 +1,55 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <MscManagedDir>C:\me\Steam\steamapps\common\My Summer Car\mysummercar_Data\Managed</MscManagedDir>
+    <OscDeployRoot>$(UserProfile)\Documents\MySummerCar\Mods</OscDeployRoot>
+    <OscAssetRoot>$(OscDeployRoot)\Assets\OurSummerCar</OscAssetRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="MSCLoader">
+      <HintPath>$(MscManagedDir)\MSCLoader.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(MscManagedDir)\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(MscManagedDir)\UnityEngine.UI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(MscManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(MscManagedDir)\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="cInput">
+      <HintPath>$(MscManagedDir)\cInput.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="ES2">
+      <HintPath>$(MscManagedDir)\ES2.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="MoodkieSecurity">
+      <HintPath>$(MscManagedDir)\MoodkieSecurity.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="PlayMaker">
+      <HintPath>$(MscManagedDir)\PlayMaker.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(MscManagedDir)\0Harmony.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

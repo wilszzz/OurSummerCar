@@ -1,0 +1,42 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Core", "OSC.Core\OSC.Core.csproj", "{B4C52E10-1001-4A11-9001-000000000001}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Bootstrap", "OSC.Bootstrap\OSC.Bootstrap.csproj", "{B4C52E10-1002-4A11-9002-000000000002}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Module.Players", "OSC.Module.Players\OSC.Module.Players.csproj", "{B4C52E10-1003-4A11-9003-000000000003}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Module.TimeWeather", "OSC.Module.TimeWeather\OSC.Module.TimeWeather.csproj", "{B4C52E10-1004-4A11-9004-000000000004}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Module.WorldDoors", "OSC.Module.WorldDoors\OSC.Module.WorldDoors.csproj", "{B4C52E10-1005-4A11-9005-000000000005}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B4C52E10-1001-4A11-9001-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4C52E10-1001-4A11-9001-000000000001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4C52E10-1001-4A11-9001-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4C52E10-1001-4A11-9001-000000000001}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4C52E10-1002-4A11-9002-000000000002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4C52E10-1002-4A11-9002-000000000002}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4C52E10-1002-4A11-9002-000000000002}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4C52E10-1002-4A11-9002-000000000002}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4C52E10-1003-4A11-9003-000000000003}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4C52E10-1003-4A11-9003-000000000003}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4C52E10-1003-4A11-9003-000000000003}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4C52E10-1003-4A11-9003-000000000003}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4C52E10-1004-4A11-9004-000000000004}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4C52E10-1004-4A11-9004-000000000004}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4C52E10-1004-4A11-9004-000000000004}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4C52E10-1004-4A11-9004-000000000004}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4C52E10-1005-4A11-9005-000000000005}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4C52E10-1005-4A11-9005-000000000005}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4C52E10-1005-4A11-9005-000000000005}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4C52E10-1005-4A11-9005-000000000005}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
