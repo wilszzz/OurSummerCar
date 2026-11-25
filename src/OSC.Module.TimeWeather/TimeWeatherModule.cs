@@ -53,6 +53,8 @@ namespace OSC.Module.TimeWeather
         private bool isLocalTime = true;
         private bool updatingMinutes;
         private bool hasInitialSync;
+        private int delayedSyncClientId = -1;
+        private float delayedSyncTime = -1f;
 
         private int lastSentDay = -1;
         private int lastSentTime = -1;
@@ -97,6 +99,8 @@ namespace OSC.Module.TimeWeather
             isLocalTime = true;
             updatingMinutes = false;
             hasInitialSync = false;
+            delayedSyncClientId = -1;
+            delayedSyncTime = -1f;
 
             sunColorFsm = null;
             sunPivot = null;
@@ -137,6 +141,14 @@ namespace OSC.Module.TimeWeather
 
             if (ctx.Transport.IsServer)
             {
+                if (delayedSyncClientId > 0 && Time.time >= delayedSyncTime)
+                {
+                    int targetId = delayedSyncClientId;
+                    delayedSyncClientId = -1;
+                    delayedSyncTime = -1f;
+                    BroadcastState(targetId, true);
+                }
+
                 int curDay = dayVar != null ? dayVar.Value : 0;
                 int curTime = timeVar != null ? timeVar.Value : 0;
                 float curMin = sunMinutesVar != null ? sunMinutesVar.Value : 0f;
@@ -358,6 +370,8 @@ namespace OSC.Module.TimeWeather
             if (ctx.Transport.IsServer && isInitialized)
             {
                 BroadcastState(clientId, true);
+                delayedSyncClientId = clientId;
+                delayedSyncTime = Time.time + 5.0f;
             }
         }
 
