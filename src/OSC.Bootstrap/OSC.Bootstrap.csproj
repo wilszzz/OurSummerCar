@@ -5,12 +5,6 @@
     <OutputType>Library</OutputType>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\OSC.Core\OSC.Core.csproj">
-      <Private>False</Private>
-    </ProjectReference>
-  </ItemGroup>
-
   <Target Name="DeployBootstrap" AfterTargets="PostBuildEvent">
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(OscDeployRoot)" SkipUnchangedFiles="true" />
     <MakeDir Directories="$(OscAssetRoot)\Modules" />
