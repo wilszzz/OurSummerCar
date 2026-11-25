@@ -12,6 +12,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Module.TimeWeather", "O
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Module.WorldDoors", "OSC.Module.WorldDoors\OSC.Module.WorldDoors.csproj", "{B4C52E10-1005-4A11-9005-000000000005}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Module.Vehicles", "OSC.Module.Vehicles\OSC.Module.Vehicles.csproj", "{B4C52E10-1006-4A11-9006-000000000006}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Module.Items", "OSC.Module.Items\OSC.Module.Items.csproj", "{B4C52E10-1007-4A11-9007-000000000007}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,5 +42,13 @@ Global
 		{B4C52E10-1005-4A11-9005-000000000005}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B4C52E10-1005-4A11-9005-000000000005}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B4C52E10-1005-4A11-9005-000000000005}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4C52E10-1006-4A11-9006-000000000006}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4C52E10-1006-4A11-9006-000000000006}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4C52E10-1006-4A11-9006-000000000006}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4C52E10-1006-4A11-9006-000000000006}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4C52E10-1007-4A11-9007-000000000007}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4C52E10-1007-4A11-9007-000000000007}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4C52E10-1007-4A11-9007-000000000007}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4C52E10-1007-4A11-9007-000000000007}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
