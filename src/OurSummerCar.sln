@@ -28,6 +28,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Module.Satsuma", "OSC.M
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Module.WorldDomestic", "OSC.Module.WorldDomestic\OSC.Module.WorldDomestic.csproj", "{7D814F33-90C2-4158-A122-3F8C22445501}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OSC.Module.WorldEconomyJobs", "OSC.Module.WorldEconomyJobs\OSC.Module.WorldEconomyJobs.csproj", "{8E925044-A1D3-4269-B233-409D33556601}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -86,5 +88,9 @@ Global
 		{7D814F33-90C2-4158-A122-3F8C22445501}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7D814F33-90C2-4158-A122-3F8C22445501}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7D814F33-90C2-4158-A122-3F8C22445501}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8E925044-A1D3-4269-B233-409D33556601}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8E925044-A1D3-4269-B233-409D33556601}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8E925044-A1D3-4269-B233-409D33556601}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8E925044-A1D3-4269-B233-409D33556601}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

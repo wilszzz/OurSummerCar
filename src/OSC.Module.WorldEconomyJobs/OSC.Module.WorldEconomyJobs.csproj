@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>OSC.Module.WorldEconomyJobs</AssemblyName>
+    <RootNamespace>OSC.Module.WorldEconomyJobs</RootNamespace>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OSC.Core\OSC.Core.csproj">
+      <Private>False</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <Target Name="DeployWorldEconomyJobs" AfterTargets="PostBuildEvent">
+    <MakeDir Directories="$(OscAssetRoot)\Modules" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(OscAssetRoot)\Modules" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

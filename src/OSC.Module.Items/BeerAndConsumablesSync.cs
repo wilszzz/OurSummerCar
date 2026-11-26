@@ -245,10 +245,10 @@ namespace OSC.Module.Items
                     SpawnEvent = fsm.AddSafeGlobalTransition("MP_SPAWNITEM", fsm.HasState("Spawn") ? "Spawn" : "Create product")
                 };
 
-                if (fsm.HasState("Spawn")) fsm.InsertAction("Spawn", () => HandleCreatorSpawned(entry), -1, false);
-                if (fsm.HasState("Create product")) fsm.InsertAction("Create product", () => HandleCreatorSpawned(entry), -1, false);
-                if (fsm.HasState("Create")) fsm.InsertAction("Create", () => HandleCreatorSpawned(entry), 5, false);
-                if (fsm.HasState("Add ID")) fsm.InsertAction("Add ID", () => HandleCreatorSpawned(entry), 5, false);
+                if (fsm.HasState("Spawn")) fsm.InsertAction("Spawn", () => HandleCreatorSpawned(entry), -1, true);
+                if (fsm.HasState("Create product")) fsm.InsertAction("Create product", () => HandleCreatorSpawned(entry), -1, true);
+                if (fsm.HasState("Create")) fsm.InsertAction("Create", () => HandleCreatorSpawned(entry), 5, true);
+                if (fsm.HasState("Add ID")) fsm.InsertAction("Add ID", () => HandleCreatorSpawned(entry), 5, true);
 
                 creators.Add(entry);
             }
@@ -399,7 +399,7 @@ namespace OSC.Module.Items
                 {
                     lastBagUnpackTime = Time.time;
                     if (tracked.CurrentBagVar != null) tracked.CurrentBagVar.Value = bag;
-                }, 0, false);
+                }, 0, true);
             }
 
             if (fsm.HasState("Spawn one"))
@@ -408,7 +408,7 @@ namespace OSC.Module.Items
                 {
                     lastBagUnpackTime = Time.time;
                     if (tracked.CurrentBagVar != null) tracked.CurrentBagVar.Value = bag;
-                }, 0, false);
+                }, 0, true);
             }
 
             if (fsm.HasState("Is garbage"))
@@ -429,7 +429,7 @@ namespace OSC.Module.Items
                             ctx.Transport.Send(p);
                         }
                     }
-                }, 0, false);
+                }, 0, true);
             }
 
             tracked.IsHooked = true;
@@ -502,7 +502,7 @@ namespace OSC.Module.Items
                     SendBeerCaseDrink(caseHash, remaining, destroyed);
                     SendDrinkGesturePacket(0);
                     ctx.Log?.Invoke($"[Пиво] Выпито из ящика #{caseHash:X} (осталось: {remaining})");
-                }, 0, false);
+                }, 0, true);
             }
 
             tracked.IsHooked = true;
@@ -762,7 +762,7 @@ namespace OSC.Module.Items
                         {
                             tracked.Fsm.SendEvent("STOP");
                         }
-                    }, 0, false);
+                    }, 0, true);
                 }
             }
 
@@ -777,7 +777,7 @@ namespace OSC.Module.Items
                         int val = tracked.ConsumedVar != null ? tracked.ConsumedVar.Value + 1 : 1;
                         SendConsumableAction(hash, ConsumableActionKind.ConsumeDrink, val, 0f);
                         SendDrinkGesturePacket(7);
-                    }, 0, false);
+                    }, 0, true);
                 }
 
                 if (tracked.Fsm.HasState("Empty"))
@@ -786,7 +786,7 @@ namespace OSC.Module.Items
                     {
                         if (suppressedConsumables.Contains(hash)) return;
                         SendConsumableAction(hash, ConsumableActionKind.Empty, 3, 0f);
-                    }, 0, false);
+                    }, 0, true);
                 }
             }
             else if (tracked.Kind == "milk" || tracked.Kind == "booze" || tracked.Kind == "beer")
@@ -801,7 +801,7 @@ namespace OSC.Module.Items
                         if (IsBagUnpackCooldown || (Time.time - tracked.SpawnTime) < 4.0f) return;
                         SendConsumableAction(hash, ConsumableActionKind.ConsumeDrink, 1, 0f);
                         SendDrinkGesturePacket(7);
-                    }, 0, false);
+                    }, 0, true);
                 }
             }
             else if (tracked.Kind == "sausage" || tracked.Kind == "pizza" || tracked.Kind == "macaron" ||
@@ -814,7 +814,7 @@ namespace OSC.Module.Items
                     {
                         if (suppressedConsumables.Contains(hash)) return;
                         SendConsumableAction(hash, ConsumableActionKind.ConsumeBite, 1, 0f);
-                    }, 0, false);
+                    }, 0, true);
                 }
             }
 

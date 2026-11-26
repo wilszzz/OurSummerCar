@@ -173,7 +173,7 @@ namespace OSC.Module.Vehicles.Boat
                         {
                             if (suppressNativeMoorFsm) { suppressNativeMoorFsm = false; return; }
                             if (!isMoored) TryAttachToNearestDock();
-                        }, 0, false);
+                        }, 0, true);
                     }
                     if (fsm.HasState("Detach"))
                     {
@@ -181,7 +181,7 @@ namespace OSC.Module.Vehicles.Boat
                         {
                             if (suppressNativeMoorFsm) { suppressNativeMoorFsm = false; return; }
                             if (isMoored) DetachMooring(BoatMooringAction.Detach, notifyRemote: true);
-                        }, 0, false);
+                        }, 0, true);
                     }
                     break;
                 }

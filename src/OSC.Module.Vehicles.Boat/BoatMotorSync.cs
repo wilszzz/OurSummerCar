@@ -371,7 +371,7 @@ namespace OSC.Module.Vehicles.Boat
                     isEngineRunning = true;
                     float thr = throttleVar != null ? throttleVar.Value : 0f;
                     SendLegacyMotor(true, thr);
-                }, 0, false);
+                }, 0, true);
             }
         }
 
@@ -424,7 +424,7 @@ namespace OSC.Module.Vehicles.Boat
                         return;
                     }
                     SendSubtype(BoatEngineSubPacket.StarterIgnition, 0, 0f);
-                }, 0, false);
+                }, 0, true);
             }
 
             if (!string.IsNullOrEmpty(runStateName))
@@ -439,7 +439,7 @@ namespace OSC.Module.Vehicles.Boat
                         return;
                     }
                     SendSubtype(BoatEngineSubPacket.StarterIgnition, 1, ReadLocalThrottle());
-                }, 0, false);
+                }, 0, true);
             }
         }
 
@@ -485,7 +485,7 @@ namespace OSC.Module.Vehicles.Boat
                     currentGear = gearByte;
                     SendSubtype(BoatEngineSubPacket.GearShift, gearByte, ReadLocalThrottle());
                 }
-            }, 0, false);
+            }, 0, true);
         }
 
         private void HookShutOffFsm()
@@ -519,7 +519,7 @@ namespace OSC.Module.Vehicles.Boat
 
                     OnEngineShutOff?.Invoke();
                     SendSubtype(BoatEngineSubPacket.ShutOff, 1, 0f);
-                }, 0, false);
+                }, 0, true);
             }
         }
 

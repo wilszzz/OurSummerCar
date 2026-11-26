@@ -230,7 +230,7 @@ namespace OSC.Module.Items
                             {
                                 if (suppressJack) { suppressJack = false; return; }
                                 SendEquipmentState(EquipmentAction.FloorJack, true, floorJackYVar != null ? floorJackYVar.Value : 0f);
-                            }, 0, false);
+                            }, 0, true);
                         }
                         if (fsm.HasState("Down"))
                         {
@@ -238,7 +238,7 @@ namespace OSC.Module.Items
                             {
                                 if (suppressJack) { suppressJack = false; return; }
                                 SendEquipmentState(EquipmentAction.FloorJack, false, 0f);
-                            }, 0, false);
+                            }, 0, true);
                         }
                     }
                 }
@@ -266,7 +266,7 @@ namespace OSC.Module.Items
                             {
                                 if (suppressHoist) { suppressHoist = false; return; }
                                 SendEquipmentState(EquipmentAction.MotorHoist, true, motorHoistAngleVar != null ? motorHoistAngleVar.Value : 0f);
-                            }, -1, false);
+                            }, -1, true);
                         }
                         if (fsm.HasState("Down"))
                         {
@@ -274,7 +274,7 @@ namespace OSC.Module.Items
                             {
                                 if (suppressHoist) { suppressHoist = false; return; }
                                 SendEquipmentState(EquipmentAction.MotorHoist, false, motorHoistAngleVar != null ? motorHoistAngleVar.Value : 0f);
-                            }, -1, false);
+                            }, -1, true);
                         }
                     }
                 }
@@ -302,7 +302,7 @@ namespace OSC.Module.Items
                     {
                         if (suppressLantern) { suppressLantern = false; return; }
                         SendEquipmentState(EquipmentAction.LanternToggle, false, idx);
-                    }, 0, false);
+                    }, 0, true);
                 }
             }
         }
@@ -329,7 +329,7 @@ namespace OSC.Module.Items
             fsm.AddSafeGlobalTransition("MP_TOGGLE", "State 2");
             if (fsm.HasState("State 2"))
             {
-                fsm.InsertAction("State 2", () => OnLocalJerryCanLidToggled(isDiesel), 0, false);
+                fsm.InsertAction("State 2", () => OnLocalJerryCanLidToggled(isDiesel), 0, true);
             }
         }
 
@@ -363,8 +363,8 @@ namespace OSC.Module.Items
             fsm.AddSafeGlobalTransition("MP_OPEN", "Open");
             fsm.AddSafeGlobalTransition("MP_CLOSE", "Close");
 
-            if (fsm.HasState("Open")) fsm.InsertAction("Open", () => OnLocalToolSetChanged(isRatchet, true), 0, false);
-            if (fsm.HasState("Close")) fsm.InsertAction("Close", () => OnLocalToolSetChanged(isRatchet, false), 0, false);
+            if (fsm.HasState("Open")) fsm.InsertAction("Open", () => OnLocalToolSetChanged(isRatchet, true), 0, true);
+            if (fsm.HasState("Close")) fsm.InsertAction("Close", () => OnLocalToolSetChanged(isRatchet, false), 0, true);
         }
 
         private void OnLocalToolSetChanged(bool isRatchet, bool isOpen)

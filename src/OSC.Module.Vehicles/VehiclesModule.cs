@@ -361,21 +361,21 @@ namespace OSC.Module.Vehicles
                     {
                         drivingFsm.SendEvent("FINISHED");
                     }
-                }, 0, false);
+                }, 0, true);
             }
 
             if (drivingFsm.HasState("Reset view"))
             {
-                drivingFsm.InsertAction("Reset view", () => HandleLocalDrivingEntered(veh), 0, false);
+                drivingFsm.InsertAction("Reset view", () => HandleLocalDrivingEntered(veh), 0, true);
             }
             else if (drivingFsm.HasState("Player in car"))
             {
-                drivingFsm.InsertAction("Player in car", () => HandleLocalDrivingEntered(veh), 0, false);
+                drivingFsm.InsertAction("Player in car", () => HandleLocalDrivingEntered(veh), 0, true);
             }
 
             if (drivingFsm.HasState("Create player"))
             {
-                drivingFsm.InsertAction("Create player", () => HandleLocalDrivingExited(veh), 0, false);
+                drivingFsm.InsertAction("Create player", () => HandleLocalDrivingExited(veh), 0, true);
             }
         }
 

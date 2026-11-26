@@ -443,7 +443,7 @@ namespace OSC.Module.Vehicles.Jonnez
                         {
                             captured.SendEvent("FINISHED");
                         }
-                    }, 0, false);
+                    }, 0, true);
                     hooked = true;
                 }
 
@@ -456,7 +456,7 @@ namespace OSC.Module.Vehicles.Jonnez
                         {
                             captured.SendEvent("FINISHED");
                         }
-                    }, 0, false);
+                    }, 0, true);
                     hooked = true;
                 }
 

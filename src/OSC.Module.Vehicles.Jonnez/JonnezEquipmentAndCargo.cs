@@ -337,13 +337,13 @@ namespace OSC.Module.Vehicles.Jonnez
             {
                 kickstandDownState = downState;
                 fsm.AddSafeGlobalTransition("MP_KICKSTAND_DOWN", downState);
-                fsm.InsertAction(downState, () => OnLocalKickstandChanged(true), 0, false);
+                fsm.InsertAction(downState, () => OnLocalKickstandChanged(true), 0, true);
             }
             if (!string.IsNullOrEmpty(upState))
             {
                 kickstandUpState = upState;
                 fsm.AddSafeGlobalTransition("MP_KICKSTAND_UP", upState);
-                fsm.InsertAction(upState, () => OnLocalKickstandChanged(false), 0, false);
+                fsm.InsertAction(upState, () => OnLocalKickstandChanged(false), 0, true);
             }
 
             if (kickstandDownVar != null)
@@ -452,12 +452,12 @@ namespace OSC.Module.Vehicles.Jonnez
                     if (!string.IsNullOrEmpty(wearState))
                     {
                         helmetFsm.AddSafeGlobalTransition("MP_HELMET_WEAR", wearState);
-                        helmetFsm.InsertAction(wearState, () => SetLocalHelmetState(true, fromFsm: true), 0, false);
+                        helmetFsm.InsertAction(wearState, () => SetLocalHelmetState(true, fromFsm: true), 0, true);
                     }
                     if (!string.IsNullOrEmpty(removeState))
                     {
                         helmetFsm.AddSafeGlobalTransition("MP_HELMET_REMOVE", removeState);
-                        helmetFsm.InsertAction(removeState, () => SetLocalHelmetState(false, fromFsm: true), 0, false);
+                        helmetFsm.InsertAction(removeState, () => SetLocalHelmetState(false, fromFsm: true), 0, true);
                     }
                 }
             }

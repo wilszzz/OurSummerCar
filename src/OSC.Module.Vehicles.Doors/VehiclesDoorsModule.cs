@@ -502,23 +502,23 @@ namespace OSC.Module.Vehicles.Doors
             {
                 tracked.HasOpenEvent = true;
                 fsm.AddSafeGlobalTransition("MP_OPEN", openState);
-                fsm.InsertAction(openState, () => OnLocalDoorAction(tracked, true), 0, autoFinish: false);
+                fsm.InsertAction(openState, () => OnLocalDoorAction(tracked, true), 0, autoFinish: true);
             }
 
             if (!string.IsNullOrEmpty(closeState))
             {
                 tracked.HasCloseEvent = true;
                 fsm.AddSafeGlobalTransition("MP_CLOSE", closeState);
-                fsm.InsertAction(closeState, () => OnLocalDoorAction(tracked, false), 0, autoFinish: false);
+                fsm.InsertAction(closeState, () => OnLocalDoorAction(tracked, false), 0, autoFinish: true);
             }
 
             if (fsm.HasState("Open door 2"))
             {
-                fsm.InsertAction("Open door 2", () => OnLocalDragOwnershipCheck(tracked), 0, autoFinish: false);
+                fsm.InsertAction("Open door 2", () => OnLocalDragOwnershipCheck(tracked), 0, autoFinish: true);
             }
             else if (fsm.HasState("Move"))
             {
-                fsm.InsertAction("Move", () => OnLocalDragOwnershipCheck(tracked), 0, autoFinish: false);
+                fsm.InsertAction("Move", () => OnLocalDragOwnershipCheck(tracked), 0, autoFinish: true);
             }
         }
 
@@ -572,25 +572,25 @@ namespace OSC.Module.Vehicles.Doors
             {
                 tracked.HasOpenEvent = true;
                 fsm.AddSafeGlobalTransition("MP_OPEN", openState);
-                fsm.InsertAction(openState, () => OnLocalDoorAction(tracked, true), 0, autoFinish: false);
+                fsm.InsertAction(openState, () => OnLocalDoorAction(tracked, true), 0, autoFinish: true);
             }
 
             if (!string.IsNullOrEmpty(closeState))
             {
                 tracked.HasCloseEvent = true;
                 fsm.AddSafeGlobalTransition("MP_CLOSE", closeState);
-                fsm.InsertAction(closeState, () => OnLocalDoorAction(tracked, false), 0, autoFinish: false);
+                fsm.InsertAction(closeState, () => OnLocalDoorAction(tracked, false), 0, autoFinish: true);
             }
 
             if (!tracked.IsHoodOrBoot)
             {
                 if (fsm.HasState("Open door 2"))
                 {
-                    fsm.InsertAction("Open door 2", () => OnLocalDragOwnershipCheck(tracked), 0, autoFinish: false);
+                    fsm.InsertAction("Open door 2", () => OnLocalDragOwnershipCheck(tracked), 0, autoFinish: true);
                 }
                 else if (fsm.HasState("Open door 3"))
                 {
-                    fsm.InsertAction("Open door 3", () => OnLocalDragOwnershipCheck(tracked), 0, autoFinish: false);
+                    fsm.InsertAction("Open door 3", () => OnLocalDragOwnershipCheck(tracked), 0, autoFinish: true);
                 }
             }
         }

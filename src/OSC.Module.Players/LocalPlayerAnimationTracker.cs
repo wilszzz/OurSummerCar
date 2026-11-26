@@ -204,9 +204,9 @@ namespace OSC.Module.Players
                 if (smokeFsm != null)
                 {
                     smokeFsm.InitializeSafe();
-                    smokeFsm.InsertAction("Double", () => OnGestureAction?.Invoke(5, true, 0), -1, false);
-                    smokeFsm.InsertAction("Anim 3", () => OnGestureAction?.Invoke(5, false, 0), -1, false);
-                    smokeFsm.InsertAction("Put out 2", () => OnGestureAction?.Invoke(5, false, 0), -1, false);
+                    smokeFsm.InsertAction("Double", () => OnGestureAction?.Invoke(5, true, 0), -1, true);
+                    smokeFsm.InsertAction("Anim 3", () => OnGestureAction?.Invoke(5, false, 0), -1, true);
+                    smokeFsm.InsertAction("Put out 2", () => OnGestureAction?.Invoke(5, false, 0), -1, true);
                 }
             }
 
@@ -223,7 +223,7 @@ namespace OSC.Module.Players
                     {
                         byte id = (byte)(speakDatabaseSwearVar != null ? speakDatabaseSwearVar.Value : 0);
                         OnSwearAction?.Invoke(id);
-                    }, -1, false);
+                    }, -1, true);
                 }
             }
 

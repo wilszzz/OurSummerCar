@@ -1006,71 +1006,9 @@ namespace OSC.Module.WorldDomestic
         {
             Transform itemsTr = GameObject.Find("ITEMS")?.transform;
 
-            // 1. Чемоданчик рожковых ключей (spannerSet)
-            if (!containerLids.ContainsKey(ContainerKind.SpannerSetLid))
-            {
-                Transform spannerTop = (itemsTr != null ? itemsTr.Find("spanner set(itemx)/Pivot/top") : null)
-                    ?? GameObject.Find("spanner set(itemx)")?.transform.Find("Pivot/top");
-                if (spannerTop == null)
-                {
-                    GameObject spannerGo = FindObjectIncludingInactive("spanner set(itemx)");
-                    if (spannerGo != null) spannerTop = spannerGo.transform.Find("Pivot/top");
-                }
-                TryRegisterToolCaseLid(ContainerKind.SpannerSetLid, spannerTop, "Domestic_SpannerSetLid");
-            }
-
-            // 2. Чемоданчик трещотки (ratchetSet)
-            if (!containerLids.ContainsKey(ContainerKind.RatchetSetLid))
-            {
-                GameObject ratchetGo = GameObject.Find("DatabaseOrders/Ratchet Set")
-                    ?? GameObject.Find("Database/DatabaseOrders/Ratchet Set")
-                    ?? GameObject.Find("Ratchet Set")
-                    ?? (itemsTr != null ? itemsTr.Find("ratchet set(itemx)")?.gameObject : null)
-                    ?? FindObjectIncludingInactive("ratchet set(Clone)")
-                    ?? FindObjectIncludingInactive("ratchet set(itemx)");
-                Transform ratchetTop = ratchetGo != null
-                    ? (ratchetGo.transform.Find("Hinge/Pivot/top") ?? ratchetGo.transform.Find("Pivot/top"))
-                    : null;
-                TryRegisterToolCaseLid(ContainerKind.RatchetSetLid, ratchetTop, "Domestic_RatchetSetLid");
-            }
-
-            // 3. Пробки канистр (ТОЛЬКО child Open FSM, никогда не трогаем Rigidbody подбора!)
-            TryRegisterJerryCanCap(ContainerKind.GasolineCap, "gasoline(itemx)", itemsTr, "Domestic_GasCanCap");
-            TryRegisterJerryCanCap(ContainerKind.DieselCap, "diesel(itemx)", itemsTr, "Domestic_DieselCanCap");
+            // SpannerSet, RatchetSet, Gasoline и Diesel уже синхронизируются в OSC.Module.Items;
+            // здесь регистрируем только пробку двухтактной канистры (two stroke fuel), исключая конфликт владения.
             TryRegisterJerryCanCap(ContainerKind.TwoStrokeCap, "two stroke fuel(itemx)", itemsTr, "Domestic_TwoStrokeCap");
-        }
-
-        private void TryRegisterToolCaseLid(ContainerKind kind, Transform topTr, string claimLabel)
-        {
-            if (topTr == null) return;
-            PlayMakerFSM fsm = topTr.GetComponent<PlayMakerFSM>();
-            if (fsm == null) return;
-
-            fsm.InitializeSafe();
-            FsmBool openVar = fsm.FsmVariables.FindFsmBool("Open");
-            bool owned = TryClaimSafe(fsm, claimLabel);
-
-            var entry = new TrackedContainerLid
-            {
-                Kind = kind,
-                LidObject = topTr.gameObject,
-                Fsm = fsm,
-                OpenVar = openVar,
-                IsJerryCanCap = false,
-                LastOpen = openVar != null && openVar.Value,
-                IsOwnedAndHooked = false
-            };
-
-            if (owned)
-            {
-                fsm.AddSafeGlobalTransition("MP_OPEN", "Open");
-                fsm.AddSafeGlobalTransition("MP_CLOSE", "Close");
-                HookFsmStateOnce(fsm, "Open", () => OnLocalContainerLidToggled(entry, isOpen: true));
-                HookFsmStateOnce(fsm, "Close", () => OnLocalContainerLidToggled(entry, isOpen: false));
-                entry.IsOwnedAndHooked = true;
-            }
-
-            containerLids[kind] = entry;
         }
 
         private void TryRegisterJerryCanCap(ContainerKind kind, string objectName, Transform itemsTr, string claimLabel)
