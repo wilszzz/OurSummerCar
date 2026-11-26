@@ -158,6 +158,12 @@ namespace OSC.Module.Vehicles.Controls
             }
         }
 
+        public void HandlePartAssembled(PartAssembledEvent evt)
+        {
+            scannedVehicleIds.Clear();
+            nextScanTime = Time.time + 0.35f;
+        }
+
         public void SendSnapshotToClient(int clientId)
         {
             if (!IsNetworkRunning || !ctx.Transport.IsServer) return;

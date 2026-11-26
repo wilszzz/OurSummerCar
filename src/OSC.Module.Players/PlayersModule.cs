@@ -27,7 +27,9 @@ namespace OSC.Module.Players
         private FsmFloat playerUrineVar;
         private bool isLocalPeeing;
         private bool localSeatedByBridge;
+        private bool localSleepingByBridge;
         private float nextSendTime;
+        private float nextPeeEventTime;
         private float nextHandshakeTime;
         private string lastSentNick = string.Empty;
 
@@ -47,6 +49,8 @@ namespace OSC.Module.Players
             ctx.Events.Subscribe<RemotePlayerSeatEvent>(HandleRemoteSeatBridge);
             ctx.Events.Subscribe<LocalPlayerOccupancyEvent>(HandleLocalOccupancyBridge);
             ctx.Events.Subscribe<PlayerHeldItemEvent>(HandleHeldItemBridge);
+            ctx.Events.Subscribe<LocalPlayerSleepStateEvent>(HandleLocalSleepBridge);
+            ctx.Events.Subscribe<RemotePlayerSleepStateEvent>(HandleRemoteSleepBridge);
 
             ctx.Transport.OnClientConnected += HandleClientConnected;
             ctx.Transport.OnClientDisconnected += HandleClientDisconnected;
@@ -70,6 +74,14 @@ namespace OSC.Module.Players
 
         public void OnShutdown()
         {
+            if (ctx?.Events != null)
+            {
+                ctx.Events.Unsubscribe<RemotePlayerSeatEvent>(HandleRemoteSeatBridge);
+                ctx.Events.Unsubscribe<LocalPlayerOccupancyEvent>(HandleLocalOccupancyBridge);
+                ctx.Events.Unsubscribe<PlayerHeldItemEvent>(HandleHeldItemBridge);
+                ctx.Events.Unsubscribe<LocalPlayerSleepStateEvent>(HandleLocalSleepBridge);
+                ctx.Events.Unsubscribe<RemotePlayerSleepStateEvent>(HandleRemoteSleepBridge);
+            }
             if (ctx?.Transport != null)
             {
                 ctx.Transport.OnClientConnected -= HandleClientConnected;
@@ -96,7 +108,9 @@ namespace OSC.Module.Players
             localCc = null;
             localCamPivot = null;
             localSeatedByBridge = false;
+            localSleepingByBridge = false;
             isLocalPeeing = false;
+            nextPeeEventTime = 0f;
             lastSentNick = string.Empty;
         }
 
@@ -147,7 +161,29 @@ namespace OSC.Module.Players
                     p.WriteBoolean(isLocalPeeing);
                     ctx.Transport.Send(p);
                 }
+                PublishLocalUrinateBridge(isLocalPeeing);
+                nextPeeEventTime = Time.time + 0.2f;
             }
+            else if (isLocalPeeing && Time.time >= nextPeeEventTime)
+            {
+                nextPeeEventTime = Time.time + 0.2f;
+                PublishLocalUrinateBridge(true);
+            }
+        }
+
+        private void PublishLocalUrinateBridge(bool peeing)
+        {
+            Transform originT = localCamPivot != null ? localCamPivot : localPlayer;
+            Vector3 pos = originT != null ? originT.position : Vector3.zero;
+            Vector3 fwd = originT != null ? originT.forward : Vector3.forward;
+            ctx?.Events?.Publish(new PlayerUrinateStateEvent
+            {
+                PlayerId = ctx.Transport != null ? ctx.Transport.LocalPlayerId : 0,
+                IsLocal = true,
+                IsPeeing = peeing,
+                Position = pos,
+                Forward = fwd
+            });
         }
 
         private void SendLocalTransform()
@@ -191,6 +227,7 @@ namespace OSC.Module.Players
             if (animTracker.IsPlayerInCar || localSeatedByBridge) animState |= 4;
             if (isLocalPeeing) animState |= 8;
             if (leaningQ) animState |= 64;
+            if (localSleepingByBridge) animState |= 128;
 
             ctx.Events.Publish(new LocalPlayerTransformUpdatedEvent
             {
@@ -332,7 +369,21 @@ namespace OSC.Module.Players
             int playerId = reader.ReadInt32();
             if (playerId == ctx.Transport.LocalPlayerId) return;
             bool peeing = reader.ReadBoolean();
-            if (puppets.TryGetValue(playerId, out var p)) p.SetPeeing(peeing);
+            if (puppets.TryGetValue(playerId, out var p))
+            {
+                p.SetPeeing(peeing);
+                if (p.RootObject != null)
+                {
+                    ctx.Events?.Publish(new PlayerUrinateStateEvent
+                    {
+                        PlayerId = playerId,
+                        IsLocal = false,
+                        IsPeeing = peeing,
+                        Position = p.RootObject.transform.position + Vector3.up * 0.62f,
+                        Forward = p.RootObject.transform.forward
+                    });
+                }
+            }
         }
 
         private void HandlePlayerSwear(PacketReader reader, int connectionId)
@@ -362,6 +413,19 @@ namespace OSC.Module.Players
             {
                 if (evt.IsHolding) puppet.HoldItem(evt.ItemObject);
                 else puppet.DropItem(evt.ItemObject);
+            }
+        }
+
+        private void HandleLocalSleepBridge(LocalPlayerSleepStateEvent evt)
+        {
+            localSleepingByBridge = evt.IsSleeping;
+        }
+
+        private void HandleRemoteSleepBridge(RemotePlayerSleepStateEvent evt)
+        {
+            if (puppets.TryGetValue(evt.PlayerId, out var puppet))
+            {
+                puppet.ApplySleepStateEvent(evt);
             }
         }
     }

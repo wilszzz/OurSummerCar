@@ -64,6 +64,7 @@ namespace OSC.Module.Vehicles.Controls
             ctx.Events.Subscribe<RemotePlayerSeatEvent>(HandleRemotePlayerSeat);
             ctx.Events.Subscribe<VehicleRemoteTelemetryEvent>(HandleVehicleRemoteTelemetry);
             ctx.Events.Subscribe<VehicleTeleportEvent>(HandleVehicleTeleport);
+            ctx.Events.Subscribe<PartAssembledEvent>(HandlePartAssembled);
 
             if (ctx.Transport != null)
             {
@@ -125,6 +126,7 @@ namespace OSC.Module.Vehicles.Controls
                 ctx.Events.Unsubscribe<RemotePlayerSeatEvent>(HandleRemotePlayerSeat);
                 ctx.Events.Unsubscribe<VehicleRemoteTelemetryEvent>(HandleVehicleRemoteTelemetry);
                 ctx.Events.Unsubscribe<VehicleTeleportEvent>(HandleVehicleTeleport);
+                ctx.Events.Unsubscribe<PartAssembledEvent>(HandlePartAssembled);
             }
 
             if (ctx?.Transport != null)
@@ -233,6 +235,11 @@ namespace OSC.Module.Vehicles.Controls
         private void HandleVehicleTeleport(VehicleTeleportEvent evt)
         {
             damageGlassSync?.HandleTeleportEvent(evt);
+        }
+
+        private void HandlePartAssembled(PartAssembledEvent evt)
+        {
+            damageGlassSync?.HandlePartAssembled(evt);
         }
 
         private void HandleClientConnected(int clientId)

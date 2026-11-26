@@ -107,6 +107,7 @@ namespace OSC.Module.Vehicles.Doors
                 ctx.Transport.OnClientDisconnected += HandleClientDisconnected;
             }
             ctx.Events?.Subscribe<VehicleTeleportEvent>(HandleVehicleTeleportEvent);
+            ctx.Events?.Subscribe<PartAssembledEvent>(HandlePartAssembledEvent);
         }
 
         public void OnMenuLoaded() => ResetState();
@@ -125,9 +126,16 @@ namespace OSC.Module.Vehicles.Doors
                 ctx.Transport.OnClientDisconnected -= HandleClientDisconnected;
             }
             ctx?.Events?.Unsubscribe<VehicleTeleportEvent>(HandleVehicleTeleportEvent);
+            ctx?.Events?.Unsubscribe<PartAssembledEvent>(HandlePartAssembledEvent);
             ctx?.Router?.UnregisterModule(ModuleId);
             ctx?.Ownership?.ReleaseModule(ModuleId);
             ResetState();
+        }
+
+        private void HandlePartAssembledEvent(PartAssembledEvent evt)
+        {
+            satsumaPanelScanAttempts = 0;
+            nextScanTime = Time.time + 0.25f;
         }
 
         private void ResetState()

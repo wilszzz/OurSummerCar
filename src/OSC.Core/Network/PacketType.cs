@@ -47,13 +47,30 @@ namespace OSC.Core.Network
         JonnezStateSync = 76,
         BoatMooringSync = 77,
 
-        // 90..109: Модули предметов и сборки Satsuma (подготовка к Этапу 2)
+        // 90..109: Модули предметов и сборки Satsuma (Этап 2 + Этап 4)
         ItemPickUp = 90,
         ItemDrop = 91,
         ItemSync = 92,
         PartAssemble = 93,
         PartRemove = 94,
         PartBoltScrew = 95,
-        PartAssembleSnapshot = 96
+        PartAssembleSnapshot = 96,
+        SatsumaTuningSync = 97,
+        SatsumaFluidsAndWearSync = 98,
+        SatsumaFleetariAndCatalogSync = 99,
+
+        // 110..129: Модуль дома, быта, сна и сауны (Этап 5)
+        DomesticPowerAndWaterSync = 110,
+        DomesticSaunaAndFireSync = 111,
+        DomesticAppliancesAndStatsSync = 112,
+        DomesticHazardsAndContainersSync = 113,
+
+        // 130..149: Модуль экономики, работ, NPC, полиции и сохранений (Этап 6)
+        EconomyWalletAndStoreSync = 130,
+        PubAndGamblingSync = 131,
+        JobsSync = 132,
+        StoryAndQuestsSync = 133,
+        NpcTrafficAndPoliceSync = 134,
+        SavegameAndRespawnSync = 135
     }
 }

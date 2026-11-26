@@ -1,6 +1,7 @@
 using System;
 using HutongGames.PlayMaker;
 using HutongGames.PlayMaker.Actions;
+using OSC.Core.Bridges;
 using OSC.Core.Modules;
 using OSC.Core.Network;
 using OSC.Core.Utilities;
@@ -67,6 +68,7 @@ namespace OSC.Module.TimeWeather
         {
             ctx = context;
             ctx.Router.Register(PacketType.TimeWeatherSync, ModuleId, HandlePacket);
+            ctx.Events.Subscribe<WorldTimeForceSyncEvent>(HandleForceTimeSync);
             ctx.Transport.OnClientConnected += HandleClientConnected;
         }
 
@@ -80,6 +82,7 @@ namespace OSC.Module.TimeWeather
 
         public void OnShutdown()
         {
+            ctx?.Events?.Unsubscribe<WorldTimeForceSyncEvent>(HandleForceTimeSync);
             if (ctx?.Transport != null)
             {
                 ctx.Transport.OnClientConnected -= HandleClientConnected;
@@ -87,6 +90,15 @@ namespace OSC.Module.TimeWeather
             ctx?.Router?.UnregisterModule(ModuleId);
             ctx?.Ownership?.ReleaseModule(ModuleId);
             ResetState();
+        }
+
+        private void HandleForceTimeSync(WorldTimeForceSyncEvent evt)
+        {
+            if (ctx?.Transport == null || !ctx.Transport.IsServer || !isInitialized) return;
+            lastSentDay = -1;
+            lastSentTime = -1;
+            lastSentMinutes = -999f;
+            BroadcastState(0, evt.ImmediateBroadcast);
         }
 
         private void ResetState()

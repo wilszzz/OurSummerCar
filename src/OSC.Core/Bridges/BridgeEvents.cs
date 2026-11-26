@@ -110,4 +110,77 @@ namespace OSC.Core.Bridges
         public GameObject TargetObject;
         public bool AllowCarryWhenParented;
     }
+
+    /// <summary>
+    /// Событие-мост Этапа 4: установка или снятие детали Satsuma (для обновления панелей/повреждений без прямой ссылки между модулями).
+    /// </summary>
+    public struct PartAssembledEvent
+    {
+        public int PartHash;
+        public string PartKey;
+        public GameObject PartObject;
+        public bool IsAssembled;
+        public bool IsLocalInitiated;
+    }
+
+    /// <summary>
+    /// Событие-мост Этапа 5: локальный игрок заснул/проснулся в триггере сна.
+    /// </summary>
+    public struct LocalPlayerSleepStateEvent
+    {
+        public bool IsSleeping;
+        public Vector3 BedPosition;
+        public float BedYaw;
+    }
+
+    /// <summary>
+    /// Событие-мост Этапа 5: удалённый игрок лёг спать или встал (для горизонтальной позы куклы).
+    /// </summary>
+    public struct RemotePlayerSleepStateEvent
+    {
+        public int PlayerId;
+        public bool IsSleeping;
+        public Vector3 BedPosition;
+        public float BedYaw;
+    }
+
+    /// <summary>
+    /// Событие-мост Этапа 5: состояние мочеиспускания игрока (используется сауной для CheckPeeOnSauna).
+    /// </summary>
+    public struct PlayerUrinateStateEvent
+    {
+        public int PlayerId;
+        public bool IsLocal;
+        public bool IsPeeing;
+        public Vector3 Position;
+        public Vector3 Forward;
+    }
+
+    /// <summary>
+    /// Событие-мост Этапа 5: принудительный сброс и мгновенная широковещательная синхронизация времени после совместного сна.
+    /// </summary>
+    public struct WorldTimeForceSyncEvent
+    {
+        public bool ImmediateBroadcast;
+    }
+
+    /// <summary>
+    /// Событие-мост Этапов 4–6: изменение общего кошелька (Satsuma Флетари/каталог <-> Магазин/Паб/Работы).
+    /// </summary>
+    public struct SharedWalletChangedEvent
+    {
+        public float Money;
+        public string SourceModuleId;
+        public bool IsAuthoritative;
+    }
+
+    /// <summary>
+    /// Событие-мост Этапа 6: возрождение игрока после смерти без разрыва кооперативной сессии.
+    /// </summary>
+    public struct PlayerRespawnedEvent
+    {
+        public int PlayerId;
+        public bool IsLocal;
+        public Vector3 SpawnPosition;
+    }
 }

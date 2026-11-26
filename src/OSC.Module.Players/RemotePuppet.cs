@@ -45,6 +45,9 @@ namespace OSC.Module.Players
         private byte lastCrouchLevel;
         private bool lastInCar;
         private bool lastSleepingInBed;
+        private bool bridgeSleepingInBed;
+        private Vector3 bridgeBedPosition;
+        private float bridgeBedYaw;
         private bool isAirborne;
         private bool isPeeing;
 
@@ -246,6 +249,24 @@ namespace OSC.Module.Players
             }
         }
 
+        public void ApplySleepStateEvent(RemotePlayerSleepStateEvent evt)
+        {
+            bridgeSleepingInBed = evt.IsSleeping;
+            bridgeBedPosition = evt.BedPosition;
+            bridgeBedYaw = evt.BedYaw;
+            lastSleepingInBed = bridgeSleepingInBed;
+            if (bridgeSleepingInBed)
+            {
+                targetPosition = evt.BedPosition;
+                targetRotation = Quaternion.Euler(0f, evt.BedYaw, 0f);
+                if (RootObject != null)
+                {
+                    RootObject.transform.position = evt.BedPosition;
+                    RootObject.transform.rotation = targetRotation;
+                }
+            }
+        }
+
         public void UpdateTarget(Vector3 pos, float rotY, float headPitch, byte animState, float leanAngle, bool airborne)
         {
             isAirborne = airborne;
@@ -282,8 +303,8 @@ namespace OSC.Module.Players
             if (RootObject == null) return;
 
             byte crouchLevel = (byte)((lastAnimState & 32) != 0 ? 2 : ((lastAnimState & 2) != 0 ? 1 : 0));
-            bool isSleeping = (lastAnimState & 128) != 0;
-            bool inVehicle = bridgeSeated && bridgeVehicleTransform != null;
+            bool isSleeping = bridgeSleepingInBed || (lastAnimState & 128) != 0;
+            bool inVehicle = !isSleeping && bridgeSeated && bridgeVehicleTransform != null;
 
             if (inVehicle)
             {
@@ -317,8 +338,12 @@ namespace OSC.Module.Players
                 }
 
                 float distSq = (RootObject.transform.position - targetPosition).sqrMagnitude;
-                Vector3 newPos = distSq > 16f ? targetPosition : Vector3.Lerp(RootObject.transform.position, targetPosition, deltaTime * 12f);
-                Quaternion newRot = distSq > 16f ? targetRotation : Quaternion.Slerp(RootObject.transform.rotation, targetRotation, deltaTime * 12f);
+                Vector3 newPos = bridgeSleepingInBed
+                    ? bridgeBedPosition
+                    : (distSq > 16f ? targetPosition : Vector3.Lerp(RootObject.transform.position, targetPosition, deltaTime * 12f));
+                Quaternion newRot = bridgeSleepingInBed
+                    ? Quaternion.Euler(0f, bridgeBedYaw, 0f)
+                    : (distSq > 16f ? targetRotation : Quaternion.Slerp(RootObject.transform.rotation, targetRotation, deltaTime * 12f));
 
                 if (!isSleeping && !isAirborne)
                 {
