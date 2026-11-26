@@ -69,6 +69,7 @@ namespace OSC.Module.Items
         private readonly Dictionary<int, RemoteMovingEntry> remoteMoving = new Dictionary<int, RemoteMovingEntry>();
         private readonly List<PendingSnapshotTarget> pendingSnapshots = new List<PendingSnapshotTarget>();
         private readonly List<int> tempKeys = new List<int>();
+        private readonly HashSet<int> cargoCarryAllowedIds = new HashSet<int>();
 
         private Transform playerTr;
         private Transform itemPivotTr;
@@ -102,6 +103,7 @@ namespace OSC.Module.Items
             ctx.Router.Register(PacketType.ItemSync, ModuleId, HandleItemSyncRouter, relayOnServer: true);
 
             ctx.Events.Subscribe<LocalPlayerTransformUpdatedEvent>(HandleLocalPlayerTransformUpdated);
+            ctx.Events.Subscribe<VehicleCargoCarryAllowanceEvent>(HandleVehicleCargoCarryAllowance);
 
             if (ctx.Transport != null)
             {
@@ -129,6 +131,7 @@ namespace OSC.Module.Items
                 beerConsumables.OnItemRemovedFromWorld -= HandleItemRemovedFromWorld;
             }
             ctx?.Events?.Unsubscribe<LocalPlayerTransformUpdatedEvent>(HandleLocalPlayerTransformUpdated);
+            ctx?.Events?.Unsubscribe<VehicleCargoCarryAllowanceEvent>(HandleVehicleCargoCarryAllowance);
 
             if (ctx?.Transport != null)
             {
@@ -161,6 +164,7 @@ namespace OSC.Module.Items
             remoteMoving.Clear();
             pendingSnapshots.Clear();
             tempKeys.Clear();
+            cargoCarryAllowedIds.Clear();
 
             playerTr = null;
             itemPivotTr = null;
@@ -238,8 +242,8 @@ namespace OSC.Module.Items
                 if (rb == null || rb.gameObject == null) continue;
                 GameObject go = rb.gameObject;
 
-                if (ItemValidator.IsSpecialCarryObject(go)) continue;
-                if (!ItemValidator.IsValidPortableItem(go, ctx.Ownership, ModuleId)) continue;
+                if (ItemValidator.IsSpecialCarryObject(go, IsCargoCarryAllowed(go))) continue;
+                if (!ItemValidator.IsValidPortableItem(go, ctx.Ownership, ModuleId, IsCargoCarryAllowed(go))) continue;
 
                 int hash = SceneHasher.GetHash(go);
                 if (!worldItems.ContainsKey(hash))
@@ -338,7 +342,8 @@ namespace OSC.Module.Items
 
             if (lastLocalHeldItem == null && current != null)
             {
-                if (!ItemValidator.IsValidPortableItem(current, ctx.Ownership, ModuleId)) return;
+                bool allowParentedCarry = IsCargoCarryAllowed(current);
+                if (!ItemValidator.IsValidPortableItem(current, ctx.Ownership, ModuleId, allowParentedCarry)) return;
 
                 int hash = SceneHasher.GetHash(current);
                 lastLocalHeldItem = current;
@@ -355,7 +360,7 @@ namespace OSC.Module.Items
                 localMoving.Remove(hash);
                 remoteMoving.Remove(hash);
 
-                if (ItemValidator.IsSpecialCarryObject(current))
+                if (ItemValidator.IsSpecialCarryObject(current, allowParentedCarry))
                 {
                     ctx.Events.Publish(new SpecialObjectCarryEvent
                     {
@@ -398,7 +403,7 @@ namespace OSC.Module.Items
                     dropped.transform.localScale = Vector3.one;
                 }
 
-                bool isSpecialCarry = ItemValidator.IsSpecialCarryObject(dropped);
+                bool isSpecialCarry = ItemValidator.IsSpecialCarryObject(dropped, IsCargoCarryAllowed(dropped));
                 Rigidbody rb = dropped.GetComponent<Rigidbody>();
                 Vector3 vel = Vector3.zero;
                 Vector3 angVel = Vector3.zero;
@@ -470,7 +475,7 @@ namespace OSC.Module.Items
 
             if (item == null) return;
 
-            if (ItemValidator.IsSpecialCarryObject(item))
+            if (ItemValidator.IsSpecialCarryObject(item, IsCargoCarryAllowed(item)))
             {
                 ctx.Events.Publish(new SpecialObjectCarryEvent
                 {
@@ -536,7 +541,7 @@ namespace OSC.Module.Items
                 item.transform.position = pos;
                 item.transform.rotation = rot;
 
-                bool isSpecial = ItemValidator.IsSpecialCarryObject(item);
+                bool isSpecial = ItemValidator.IsSpecialCarryObject(item, IsCargoCarryAllowed(item));
                 Rigidbody rb = item.GetComponent<Rigidbody>();
 
                 if (isSpecial)
@@ -629,8 +634,8 @@ namespace OSC.Module.Items
                 if (rb.velocity.sqrMagnitude <= 0.0001f && rb.angularVelocity.sqrMagnitude <= 0.0025f) continue;
 
                 GameObject go = rb.gameObject;
-                if (ItemValidator.IsSpecialCarryObject(go)) continue;
-                if (!ItemValidator.IsValidPortableItem(go, ctx.Ownership, ModuleId)) continue;
+                if (ItemValidator.IsSpecialCarryObject(go, IsCargoCarryAllowed(go))) continue;
+                if (!ItemValidator.IsValidPortableItem(go, ctx.Ownership, ModuleId, IsCargoCarryAllowed(go))) continue;
 
                 int hash = SceneHasher.GetHash(go);
                 if (IsItemHeld(hash) || localMoving.ContainsKey(hash) || remoteMoving.ContainsKey(hash)) continue;
@@ -790,7 +795,7 @@ namespace OSC.Module.Items
             }
 
             GameObject item = ResolveItemObject(itemHash, string.Empty, senderId, pos);
-            if (item == null || ItemValidator.IsSpecialCarryObject(item) || ItemValidator.IsVehicleOrAttachedPart(item)) return;
+            if (item == null || ItemValidator.IsSpecialCarryObject(item, IsCargoCarryAllowed(item)) || ItemValidator.IsVehicleOrAttachedPart(item)) return;
 
             if (worldItems.TryGetValue(itemHash, out var wEntry))
             {
@@ -973,7 +978,7 @@ namespace OSC.Module.Items
 
                 if (item != null)
                 {
-                    if (ItemValidator.IsSpecialCarryObject(item))
+                    if (ItemValidator.IsSpecialCarryObject(item, IsCargoCarryAllowed(item)))
                     {
                         ctx.Events.Publish(new SpecialObjectCarryEvent
                         {
@@ -1036,6 +1041,25 @@ namespace OSC.Module.Items
             lastLocalPlayerPos = evt.Position;
         }
 
+        private void HandleVehicleCargoCarryAllowance(VehicleCargoCarryAllowanceEvent evt)
+        {
+            if (evt.TargetObject == null) return;
+            int instanceId = evt.TargetObject.GetInstanceID();
+            if (evt.AllowCarryWhenParented)
+            {
+                cargoCarryAllowedIds.Add(instanceId);
+            }
+            else
+            {
+                cargoCarryAllowedIds.Remove(instanceId);
+            }
+        }
+
+        private bool IsCargoCarryAllowed(GameObject go)
+        {
+            return go != null && cargoCarryAllowedIds.Contains(go.GetInstanceID());
+        }
+
         private void HandleClientConnected(int clientId)
         {
             if (ctx.Transport == null) return;
@@ -1070,7 +1094,7 @@ namespace OSC.Module.Items
                         ItemObject = hr.Item,
                         ItemHash = hr.Hash
                     });
-                    if (ItemValidator.IsSpecialCarryObject(hr.Item))
+                    if (ItemValidator.IsSpecialCarryObject(hr.Item, IsCargoCarryAllowed(hr.Item)))
                     {
                         ctx.Events.Publish(new SpecialObjectCarryEvent
                         {
@@ -1145,7 +1169,8 @@ namespace OSC.Module.Items
                     if (cand.name.StartsWith(itemName, StringComparison.OrdinalIgnoreCase) ||
                         itemName.StartsWith(cand.name, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (!ItemValidator.IsVehicleOrAttachedPart(cand) || ItemValidator.IsSpecialCarryObject(cand))
+                        bool allowCarry = IsCargoCarryAllowed(cand);
+                        if (!ItemValidator.IsVehicleOrAttachedPart(cand, allowCarry) || ItemValidator.IsSpecialCarryObject(cand, allowCarry))
                         {
                             SceneHasher.RegisterDynamicObject(itemHash, cand);
                             return cand;

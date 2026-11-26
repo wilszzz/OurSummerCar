@@ -90,6 +90,18 @@ namespace OSC.Module.Vehicles
         public float LastControlsSendTime { get; set; }
         public bool IsCurrentlyKinematic { get; private set; }
 
+        // Отслеживание телепортов и подавление скачков руля при лагах
+        public Vector3 LastTrackedPosition { get; set; }
+        public bool HasTrackedPosition { get; set; }
+        public float SteeringTeleportGuardUntil { get; set; }
+
+        // Переопределение физического авторитета (Stage 3: Towing / Jonnez Cargo / Boat Safety)
+        public bool HasAuthorityOverride { get; set; }
+        public int OverrideAuthorityPlayerId { get; set; }
+        public bool OverrideForceKinematic { get; set; }
+        public bool OverrideForceDynamic { get; set; }
+        public bool OverrideSuppressWorldTransformSync { get; set; }
+
         private Transform steeringIkHelperRoot;
         private bool steeringWheelChecked;
 
@@ -115,6 +127,8 @@ namespace OSC.Module.Vehicles
             MainRigidbody = go.GetComponent<Rigidbody>();
             CarController = go.GetComponent<AxisCarController>();
             Drivetrain = go.GetComponent<Drivetrain>();
+            LastTrackedPosition = Transform.position;
+            HasTrackedPosition = true;
 
             CacheManagedRigidbodies();
             RefreshSolidColliders();
@@ -353,30 +367,96 @@ namespace OSC.Module.Vehicles
         public void ApplyRemoteSteeringAngle(float angle, float dt)
         {
             if (SteeringWheelTransform == null) return;
+            if (float.IsNaN(angle) || float.IsInfinity(angle)) return;
+
             if (SteeringWheelComponent != null && IsDrivenRemotely)
             {
                 // Не конфликтуем со SteeringWheel.Update на удалённой машине, если контроллер перезаписывает угол
                 SteeringWheelComponent.enabled = false;
             }
 
+            if (Time.time < SteeringTeleportGuardUntil)
+            {
+                SnapRemoteSteeringAngle(angle);
+                return;
+            }
+
+            float safeDt = Mathf.Clamp(dt, 0f, 0.05f);
+            float t = Mathf.Clamp01(safeDt * 18f);
+            float maxStep = 720f * safeDt;
+
             Vector3 e = SteeringWheelTransform.localEulerAngles;
             if (Kind == VehicleKind.Jonnez || (SteeringWheelComponent != null && SteeringWheelComponent.rotateAroundY))
             {
-                float nextY = Mathf.LerpAngle(e.y, angle, Mathf.Clamp01(dt * 18f));
-                SteeringWheelTransform.localEulerAngles = new Vector3(e.x, nextY, e.z);
+                float lerpedY = Mathf.LerpAngle(e.y, angle, t);
+                float deltaY = Mathf.Clamp(Mathf.DeltaAngle(e.y, lerpedY), -maxStep, maxStep);
+                SteeringWheelTransform.localEulerAngles = new Vector3(e.x, e.y + deltaY, e.z);
             }
             else
             {
-                float nextZ = Mathf.LerpAngle(e.z, angle, Mathf.Clamp01(dt * 18f));
-                SteeringWheelTransform.localEulerAngles = new Vector3(e.x, e.y, nextZ);
+                float lerpedZ = Mathf.LerpAngle(e.z, angle, t);
+                float deltaZ = Mathf.Clamp(Mathf.DeltaAngle(e.z, lerpedZ), -maxStep, maxStep);
+                SteeringWheelTransform.localEulerAngles = new Vector3(e.x, e.y, e.z + deltaZ);
+            }
+        }
+
+        public void SnapRemoteSteeringAngle(float angle)
+        {
+            if (SteeringWheelTransform == null) return;
+            if (float.IsNaN(angle) || float.IsInfinity(angle)) return;
+
+            if (SteeringWheelComponent != null && IsDrivenRemotely)
+            {
+                SteeringWheelComponent.enabled = false;
+            }
+
+            Vector3 e = SteeringWheelTransform.localEulerAngles;
+            if (Kind == VehicleKind.Jonnez || (SteeringWheelComponent != null && SteeringWheelComponent.rotateAroundY))
+            {
+                SteeringWheelTransform.localEulerAngles = new Vector3(e.x, angle, e.z);
+            }
+            else
+            {
+                SteeringWheelTransform.localEulerAngles = new Vector3(e.x, e.y, angle);
             }
         }
 
         public void RestoreLocalSteeringControl()
         {
+            if (CarController != null && !IsDrivenLocally)
+            {
+                CarController.steerInput = 0f;
+                CarController.throttleInput = 0f;
+                CarController.brakeInput = 0f;
+                CarController.handbrakeInput = 0f;
+                CarController.clutchInput = 0f;
+            }
+
             if (SteeringWheelComponent != null && !SteeringWheelComponent.enabled)
             {
                 SteeringWheelComponent.enabled = true;
+            }
+        }
+
+        public void ClearAuthorityOverride()
+        {
+            HasAuthorityOverride = false;
+            OverrideAuthorityPlayerId = 0;
+            OverrideForceKinematic = false;
+            OverrideForceDynamic = false;
+            OverrideSuppressWorldTransformSync = false;
+        }
+
+        public void ZeroAllManagedVelocities()
+        {
+            for (int i = 0; i < ManagedRigidbodies.Count; i++)
+            {
+                ManagedRigidbodyEntry entry = ManagedRigidbodies[i];
+                if (entry != null && entry.Rb != null && !entry.Rb.isKinematic)
+                {
+                    entry.Rb.velocity = Vector3.zero;
+                    entry.Rb.angularVelocity = Vector3.zero;
+                }
             }
         }
 
@@ -441,10 +521,13 @@ namespace OSC.Module.Vehicles
             }
         }
 
-        public void StepRemoteTransform(float dt)
+        public bool StepRemoteTransform(float dt)
         {
-            if (Transform == null || !HasRemoteState) return;
-            if (IsDrivenLocally || LocalPushTimer > 0f || IsCarriedLocally || IsCarriedRemotely) return;
+            if (Transform == null || !HasRemoteState || OverrideSuppressWorldTransformSync) return false;
+
+            bool isForceKinematicRemote = HasAuthorityOverride && OverrideForceKinematic;
+            if (!isForceKinematicRemote && (IsDrivenLocally || LocalPushTimer > 0f)) return false;
+            if (IsCarriedLocally || IsCarriedRemotely) return false;
 
             // Мягкая экстраполяция по последней скорости с затуханием, чтобы камера пассажира не дрожала между пакетами 25 Гц
             float packetAge = Mathf.Clamp(Time.time - LastRemotePhysicsTime, 0f, 0.12f);
@@ -456,13 +539,23 @@ namespace OSC.Module.Vehicles
             {
                 Transform.position = TargetPosition;
                 Transform.rotation = TargetRotation;
-                return;
+                TargetVelocity = Vector3.zero;
+                TargetAngularVelocity = Vector3.zero;
+                ZeroAllManagedVelocities();
+                SteeringTeleportGuardUntil = Time.time + 0.35f;
+                SnapRemoteSteeringAngle(RemoteSteerAngle);
+                LastTrackedPosition = TargetPosition;
+                HasTrackedPosition = true;
+                return true;
             }
 
             float posT = Mathf.Clamp01(dt * 20f);
             float rotT = Mathf.Clamp01(dt * 20f);
             Transform.position = Vector3.Lerp(Transform.position, predictedPos, posT);
             Transform.rotation = Quaternion.Slerp(Transform.rotation, predictedRot, rotT);
+            LastTrackedPosition = Transform.position;
+            HasTrackedPosition = true;
+            return false;
         }
 
         public void StepRemoteControls(float dt)

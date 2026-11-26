@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>OSC.Module.Vehicles.Doors</AssemblyName>
+    <RootNamespace>OSC.Module.Vehicles.Doors</RootNamespace>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OSC.Core\OSC.Core.csproj">
+      <Private>False</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <Target Name="DeployVehiclesDoors" AfterTargets="PostBuildEvent">
+    <MakeDir Directories="$(OscAssetRoot)\Modules" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(OscAssetRoot)\Modules" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

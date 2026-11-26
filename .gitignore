@@ -1,7 +1,9 @@
 bin/
 obj/
 Release/
+backups/
 scratch/
+*.zip
 *.user
 *.suo
 *.dll

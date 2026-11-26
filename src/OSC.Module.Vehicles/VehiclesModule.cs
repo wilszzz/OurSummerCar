@@ -50,6 +50,8 @@ namespace OSC.Module.Vehicles
         private readonly Dictionary<byte, TrackedVehicle> vehiclesById = new Dictionary<byte, TrackedVehicle>();
         private readonly Dictionary<int, RemoteSeatAssignment> remoteSeats = new Dictionary<int, RemoteSeatAssignment>();
         private readonly List<PendingSnapshotSchedule> pendingSnapshots = new List<PendingSnapshotSchedule>();
+        private readonly Dictionary<byte, Dictionary<string, VehiclePhysicsAuthorityEvent>> authorityOverrides =
+            new Dictionary<byte, Dictionary<string, VehiclePhysicsAuthorityEvent>>();
 
         private readonly CollisionAndExitGuard collisionGuard = new CollisionAndExitGuard();
         private readonly PassengerSeatSystem passengerSystem = new PassengerSeatSystem();
@@ -80,6 +82,7 @@ namespace OSC.Module.Vehicles
             ctx.Router.Register(PacketType.VehicleControlSync, ModuleId, HandleVehicleControlSync, relayOnServer: true);
 
             ctx.Events.Subscribe<SpecialObjectCarryEvent>(HandleSpecialObjectCarry);
+            ctx.Events.Subscribe<VehiclePhysicsAuthorityEvent>(HandleVehiclePhysicsAuthority);
 
             if (ctx.Transport != null)
             {
@@ -101,6 +104,7 @@ namespace OSC.Module.Vehicles
         {
             passengerSystem.OnLocalPassengerStateChanged -= HandleLocalPassengerStateChanged;
             ctx?.Events?.Unsubscribe<SpecialObjectCarryEvent>(HandleSpecialObjectCarry);
+            ctx?.Events?.Unsubscribe<VehiclePhysicsAuthorityEvent>(HandleVehiclePhysicsAuthority);
 
             if (ctx?.Transport != null)
             {
@@ -122,6 +126,7 @@ namespace OSC.Module.Vehicles
             vehiclesById.Clear();
             remoteSeats.Clear();
             pendingSnapshots.Clear();
+            authorityOverrides.Clear();
 
             localDrivenVehicle = null;
             localDriveEnterTime = 0f;
@@ -172,7 +177,10 @@ namespace OSC.Module.Vehicles
                     if (veh.LocalPushTimer <= 0f)
                     {
                         veh.LocalPushTimer = 0f;
-                        if (IsNetworkRunning) SendVehiclePhysicsSync(veh, true);
+                        if (IsNetworkRunning && !veh.OverrideSuppressWorldTransformSync && IsLocalPhysicsAuthority(veh))
+                        {
+                            SendVehiclePhysicsSync(veh, true);
+                        }
                     }
                 }
 
@@ -184,6 +192,28 @@ namespace OSC.Module.Vehicles
                         veh.RemotePushTimer = 0f;
                         UpdateVehicleKinematicOwnership(veh);
                     }
+                }
+
+                Vector3 curPos = veh.Transform.position;
+                if (!veh.HasTrackedPosition)
+                {
+                    veh.LastTrackedPosition = curPos;
+                    veh.HasTrackedPosition = true;
+                }
+                else
+                {
+                    if (IsLocalPhysicsAuthority(veh) && (curPos - veh.LastTrackedPosition).sqrMagnitude > 100f)
+                    {
+                        veh.ZeroAllManagedVelocities();
+                        veh.SteeringTeleportGuardUntil = Time.time + 0.35f;
+                        veh.LastPhysicsSendTime = 0f; // Обход 1 Гц троттлинга в покое
+                        if (IsNetworkRunning && !veh.OverrideSuppressWorldTransformSync)
+                        {
+                            SendVehiclePhysicsSync(veh, false);
+                        }
+                        PublishTeleportEvent(veh, curPos, isLocalInitiated: true);
+                    }
+                    veh.LastTrackedPosition = curPos;
                 }
 
                 veh.StepRemoteControls(dt);
@@ -218,7 +248,10 @@ namespace OSC.Module.Vehicles
                 if (!veh.IsBound) continue;
                 if (ShouldInterpolateRemotely(veh))
                 {
-                    veh.StepRemoteTransform(dt);
+                    if (veh.StepRemoteTransform(dt))
+                    {
+                        PublishTeleportEvent(veh, veh.TargetPosition, isLocalInitiated: false);
+                    }
                 }
             }
 
@@ -279,6 +312,7 @@ namespace OSC.Module.Vehicles
                 }
 
                 passengerSystem.EnsureSeatsForVehicle(veh);
+                ApplyResolvedAuthorityOverride(veh);
                 UpdateVehicleKinematicOwnership(veh);
                 ctx.Log?.Invoke($"[Транспорт] Подключён {veh.GameObject.name} (ID={veh.Id}, сидений={veh.PassengerSeats.Count})");
             }
@@ -391,9 +425,12 @@ namespace OSC.Module.Vehicles
             veh.LocalPushTimer = 0f;
 
             veh.RestoreLocalSteeringControl();
-            veh.SetKinematic(false);
-            veh.SetInterpolationActive(true);
-            veh.WakeUp();
+            if (!veh.OverrideForceKinematic)
+            {
+                veh.SetKinematic(false);
+                veh.SetInterpolationActive(true);
+                veh.WakeUp();
+            }
 
             collisionGuard.SetLocalVehicleCollisionsIgnored(veh, FindPlayerTransform(), true);
 
@@ -405,10 +442,16 @@ namespace OSC.Module.Vehicles
                 VehicleTransform = veh.Transform
             });
 
-            if (IsNetworkRunning)
+            UpdateVehicleKinematicOwnership(veh);
+
+            if (IsNetworkRunning && !veh.OverrideSuppressWorldTransformSync && IsLocalPhysicsAuthority(veh))
             {
                 SendDrivingModePacket(veh.Id, true);
                 SendVehiclePhysicsSync(veh, false);
+            }
+            else if (IsNetworkRunning)
+            {
+                SendDrivingModePacket(veh.Id, true);
             }
 
             ctx.Log?.Invoke($"[Транспорт] Локальный игрок сел за руль {veh.GameObject.name}");
@@ -517,6 +560,15 @@ namespace OSC.Module.Vehicles
         private bool IsLocalPhysicsAuthority(TrackedVehicle veh)
         {
             if (veh == null || !veh.IsBound) return false;
+            if (veh.OverrideSuppressWorldTransformSync) return false;
+
+            if (veh.HasAuthorityOverride)
+            {
+                if (veh.OverrideForceKinematic) return false;
+                if (veh.OverrideForceDynamic || veh.OverrideAuthorityPlayerId == LocalPlayerId) return true;
+                return false;
+            }
+
             if (veh.IsDrivenLocally || veh.IsCarriedLocally || veh.LocalPushTimer > 0f) return true;
             if (veh.IsDrivenRemotely || veh.IsPushedRemotely || veh.IsCarriedRemotely) return false;
 
@@ -527,7 +579,16 @@ namespace OSC.Module.Vehicles
         private bool ShouldInterpolateRemotely(TrackedVehicle veh)
         {
             if (veh == null || !veh.HasRemoteState) return false;
-            if (veh.IsDrivenLocally || veh.LocalPushTimer > 0f || veh.IsCarriedLocally || veh.IsCarriedRemotely) return false;
+            if (veh.OverrideSuppressWorldTransformSync) return false;
+            if (veh.IsCarriedLocally || veh.IsCarriedRemotely) return false;
+
+            if (veh.HasAuthorityOverride)
+            {
+                if (veh.OverrideForceDynamic || veh.OverrideAuthorityPlayerId == LocalPlayerId) return false;
+                if (veh.OverrideForceKinematic) return true;
+            }
+
+            if (veh.IsDrivenLocally || veh.LocalPushTimer > 0f) return false;
 
             if (veh.IsDrivenRemotely || veh.IsPushedRemotely) return true;
 
@@ -546,6 +607,20 @@ namespace OSC.Module.Vehicles
         private void UpdateVehicleKinematicOwnership(TrackedVehicle veh)
         {
             if (veh == null || !veh.IsBound) return;
+
+            if (veh.HasAuthorityOverride)
+            {
+                if (veh.OverrideForceKinematic)
+                {
+                    veh.SetKinematic(true);
+                    return;
+                }
+                if (veh.OverrideForceDynamic)
+                {
+                    veh.SetKinematic(false);
+                    return;
+                }
+            }
 
             if (veh.IsDrivenLocally || veh.LocalPushTimer > 0f)
             {
@@ -625,6 +700,7 @@ namespace OSC.Module.Vehicles
         private void SendVehiclePhysicsSync(TrackedVehicle veh, bool isResting)
         {
             if (!IsNetworkRunning || veh == null || !veh.IsBound || veh.MainRigidbody == null) return;
+            if (veh.OverrideSuppressWorldTransformSync) return;
 
             veh.LastPhysicsSendTime = Time.time;
             byte flags = 0;
@@ -687,17 +763,33 @@ namespace OSC.Module.Vehicles
 
             if (!vehiclesById.TryGetValue(vehId, out TrackedVehicle veh) || !veh.IsBound) return;
 
-            // Пока локальный игрок владеет физикой авто, отклоняем чужие/устаревшие пакеты
-            if (veh.IsDrivenLocally || veh.LocalPushTimer > 0f || veh.IsCarriedLocally) return;
+            bool allowByOverride = veh.HasAuthorityOverride
+                && veh.OverrideForceKinematic
+                && veh.OverrideAuthorityPlayerId != LocalPlayerId
+                && senderId == veh.OverrideAuthorityPlayerId;
+
+            if (veh.HasAuthorityOverride && !allowByOverride)
+            {
+                if (veh.OverrideAuthorityPlayerId == LocalPlayerId || veh.OverrideForceDynamic || senderId != veh.OverrideAuthorityPlayerId)
+                {
+                    return;
+                }
+            }
+
+            // Пока локальный игрок владеет физикой авто (и нет ForceKinematic-переопределения), отклоняем чужие/устаревшие пакеты
+            if (!allowByOverride && (veh.IsDrivenLocally || veh.LocalPushTimer > 0f || veh.IsCarriedLocally)) return;
 
             bool isRemoteDriving = (flags & 1) != 0;
             bool isRemotePushed = (flags & 2) != 0;
             bool isResting = (flags & 4) != 0;
             bool isRemoteCarried = (flags & 8) != 0;
 
-            // Если кто-то другой рулит или толкает — принимаем пакет, иначе принимаем пакет только от текущего владельца (обычно Хоста 0)
-            if (veh.DriverPlayerId >= 0 && senderId != veh.DriverPlayerId && !isRemoteDriving) return;
-            if (veh.DriverPlayerId < 0 && !isRemoteDriving && !isRemotePushed && !isRemoteCarried && senderId != veh.OwnerPlayerId && senderId != 0) return;
+            if (!allowByOverride)
+            {
+                // Если кто-то другой рулит или толкает — принимаем пакет, иначе принимаем пакет только от текущего владельца (обычно Хоста 0)
+                if (veh.DriverPlayerId >= 0 && senderId != veh.DriverPlayerId && !isRemoteDriving) return;
+                if (veh.DriverPlayerId < 0 && !isRemoteDriving && !isRemotePushed && !isRemoteCarried && senderId != veh.OwnerPlayerId && senderId != 0) return;
+            }
 
             veh.TargetPosition = pos;
             veh.TargetRotation = rot;
@@ -729,28 +821,52 @@ namespace OSC.Module.Vehicles
 
             UpdateVehicleKinematicOwnership(veh);
 
+            if (veh.OverrideSuppressWorldTransformSync)
+            {
+                return;
+            }
+
             if (ShouldInterpolateRemotely(veh))
             {
                 if ((veh.Transform.position - pos).sqrMagnitude > 36f)
                 {
                     veh.Transform.position = pos;
                     veh.Transform.rotation = rot;
+                    veh.TargetVelocity = Vector3.zero;
+                    veh.TargetAngularVelocity = Vector3.zero;
+                    veh.ZeroAllManagedVelocities();
+                    veh.SteeringTeleportGuardUntil = Time.time + 0.35f;
+                    veh.SnapRemoteSteeringAngle(steerAngle);
+                    veh.LastTrackedPosition = pos;
+                    veh.HasTrackedPosition = true;
+                    PublishTeleportEvent(veh, pos, isLocalInitiated: false);
                 }
             }
             else if (veh.MainRigidbody != null && !veh.IsCurrentlyKinematic)
             {
+                bool isSnap = (veh.Transform.position - pos).sqrMagnitude > 36f;
                 veh.Transform.position = pos;
                 veh.Transform.rotation = rot;
-                if (isResting)
+                if (isResting || isSnap)
                 {
-                    veh.MainRigidbody.velocity = Vector3.zero;
-                    veh.MainRigidbody.angularVelocity = Vector3.zero;
+                    veh.TargetVelocity = Vector3.zero;
+                    veh.TargetAngularVelocity = Vector3.zero;
+                    veh.ZeroAllManagedVelocities();
                     veh.MainRigidbody.Sleep();
                 }
                 else
                 {
                     veh.ApplyLinearAndAngularVelocity(vel, angVel);
                 }
+
+                if (isSnap)
+                {
+                    veh.SteeringTeleportGuardUntil = Time.time + 0.35f;
+                    veh.SnapRemoteSteeringAngle(steerAngle);
+                    PublishTeleportEvent(veh, pos, isLocalInitiated: false);
+                }
+                veh.LastTrackedPosition = pos;
+                veh.HasTrackedPosition = true;
             }
         }
 
@@ -794,6 +910,10 @@ namespace OSC.Module.Vehicles
                     SeatIndex = -1
                 };
                 PublishSeatEvent(remoteSeats[playerId], isSeated: true);
+                if (veh.HasRemoteControls)
+                {
+                    PublishRemoteTelemetryEvent(veh, isDrivenRemotely: true);
+                }
                 ctx.Log?.Invoke($"[Транспорт] Игрок #{playerId} сел за руль {veh.GameObject.name}");
             }
             else
@@ -803,16 +923,26 @@ namespace OSC.Module.Vehicles
                     veh.DriverPlayerId = -1;
                     veh.OwnerPlayerId = 0; // Владелец физики возвращается к Хосту
                     veh.HasRemoteControls = false;
+                    veh.RemoteSteerInput = 0f;
+                    veh.RemoteThrottleInput = 0f;
+                    veh.RemoteBrakeInput = 0f;
+                    veh.RemoteHandbrakeInput = 0f;
+                    veh.RemoteClutchInput = 0f;
+                    veh.RemoteRpm = 0f;
                     veh.RestoreLocalSteeringControl();
+
+                    PublishRemoteTelemetryEvent(veh, isDrivenRemotely: false);
 
                     // Если этот клиент сам вышел и мы Хост — переносим накопленную скорость на физику Хоста
                     UpdateVehicleKinematicOwnership(veh);
-                    if (ctx.Transport != null && ctx.Transport.IsServer && veh.HasRemoteState && !veh.IsCurrentlyKinematic)
+                    if (ctx.Transport != null && ctx.Transport.IsServer && veh.HasRemoteState && !veh.IsCurrentlyKinematic && !veh.OverrideSuppressWorldTransformSync)
                     {
                         if ((veh.Transform.position - veh.TargetPosition).sqrMagnitude > 0.25f)
                         {
                             veh.Transform.position = veh.TargetPosition;
                             veh.Transform.rotation = veh.TargetRotation;
+                            veh.LastTrackedPosition = veh.TargetPosition;
+                            veh.HasTrackedPosition = true;
                         }
                         veh.ApplyLinearAndAngularVelocity(veh.TargetVelocity, veh.TargetAngularVelocity);
                         veh.WakeUp();
@@ -905,6 +1035,9 @@ namespace OSC.Module.Vehicles
             veh.RemoteGear = gear;
             veh.RemoteRpm = rpm;
             veh.HasRemoteControls = true;
+
+            bool isRemoteDriver = veh.DriverPlayerId == senderId || veh.IsDrivenRemotely;
+            PublishRemoteTelemetryEvent(veh, isDrivenRemotely: isRemoteDriver);
         }
 
         private void HandleVehiclePassengerSnapshot(PacketReader reader, int connectionId)
@@ -921,8 +1054,9 @@ namespace OSC.Module.Vehicles
 
                 if (vehiclesById.TryGetValue(vehId, out TrackedVehicle veh) && veh.IsBound)
                 {
-                    if (!veh.IsDrivenLocally && veh.LocalPushTimer <= 0f)
+                    if (!veh.IsDrivenLocally && veh.LocalPushTimer <= 0f && !veh.OverrideSuppressWorldTransformSync)
                     {
+                        bool isSnap = (veh.Transform.position - pos).sqrMagnitude > 36f;
                         veh.TargetPosition = pos;
                         veh.TargetRotation = rot;
                         veh.TargetVelocity = Vector3.zero;
@@ -933,6 +1067,15 @@ namespace OSC.Module.Vehicles
 
                         veh.Transform.position = pos;
                         veh.Transform.rotation = rot;
+                        veh.LastTrackedPosition = pos;
+                        veh.HasTrackedPosition = true;
+                        if (isSnap)
+                        {
+                            veh.ZeroAllManagedVelocities();
+                            veh.SteeringTeleportGuardUntil = Time.time + 0.35f;
+                            veh.SnapRemoteSteeringAngle(steerAngle);
+                            PublishTeleportEvent(veh, pos, isLocalInitiated: false);
+                        }
                     }
 
                     if (driverId >= 0 && driverId != LocalPlayerId)
@@ -1199,6 +1342,159 @@ namespace OSC.Module.Vehicles
             GameObject pObj = GameObject.Find("PLAYER") ?? GameObject.FindWithTag("Player");
             if (pObj != null) playerTr = pObj.transform;
             return playerTr;
+        }
+
+        private TrackedVehicle ResolveVehicle(int vehicleId, Transform vehicleTransform)
+        {
+            if (vehicleId >= 0 && vehicleId <= byte.MaxValue &&
+                vehiclesById.TryGetValue((byte)vehicleId, out TrackedVehicle byId))
+            {
+                return byId;
+            }
+
+            if (vehicleTransform != null)
+            {
+                for (int i = 0; i < vehicles.Count; i++)
+                {
+                    if (vehicles[i].Transform == vehicleTransform)
+                    {
+                        return vehicles[i];
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private void HandleVehiclePhysicsAuthority(VehiclePhysicsAuthorityEvent evt)
+        {
+            TrackedVehicle veh = ResolveVehicle(evt.VehicleId, evt.VehicleTransform);
+            if (evt.VehicleId < 0 || evt.VehicleId > byte.MaxValue)
+            {
+                if (veh == null) return;
+            }
+
+            byte vid = veh != null ? veh.Id : (byte)evt.VehicleId;
+            string sourceKey = string.IsNullOrEmpty(evt.SourceModuleId) ? "__default" : evt.SourceModuleId;
+
+            if (evt.OverrideActive)
+            {
+                if (!authorityOverrides.TryGetValue(vid, out var bySource))
+                {
+                    bySource = new Dictionary<string, VehiclePhysicsAuthorityEvent>();
+                    authorityOverrides[vid] = bySource;
+                }
+                bySource[sourceKey] = evt;
+            }
+            else if (authorityOverrides.TryGetValue(vid, out var bySource))
+            {
+                bySource.Remove(sourceKey);
+                if (bySource.Count == 0)
+                {
+                    authorityOverrides.Remove(vid);
+                }
+            }
+
+            if (veh != null)
+            {
+                ApplyResolvedAuthorityOverride(veh);
+                if (veh.IsBound)
+                {
+                    UpdateVehicleKinematicOwnership(veh);
+                }
+            }
+        }
+
+        private void ApplyResolvedAuthorityOverride(TrackedVehicle veh)
+        {
+            if (veh == null) return;
+
+            if (!authorityOverrides.TryGetValue(veh.Id, out var bySource) || bySource.Count == 0)
+            {
+                veh.ClearAuthorityOverride();
+                return;
+            }
+
+            bool forceKinematic = false;
+            bool forceDynamic = false;
+            bool suppressWorldSync = false;
+            int authorityPlayerId = 0;
+            bool hasAuthorityPlayer = false;
+
+            foreach (var kv in bySource)
+            {
+                VehiclePhysicsAuthorityEvent ov = kv.Value;
+                if (!ov.OverrideActive) continue;
+
+                if (ov.ForceKinematic)
+                {
+                    forceKinematic = true;
+                    authorityPlayerId = ov.AuthorityPlayerId;
+                    hasAuthorityPlayer = true;
+                }
+                if (ov.ForceDynamic)
+                {
+                    forceDynamic = true;
+                    if (!hasAuthorityPlayer)
+                    {
+                        authorityPlayerId = ov.AuthorityPlayerId;
+                        hasAuthorityPlayer = true;
+                    }
+                }
+                if (ov.SuppressWorldTransformSync)
+                {
+                    suppressWorldSync = true;
+                    if (!hasAuthorityPlayer)
+                    {
+                        authorityPlayerId = ov.AuthorityPlayerId;
+                        hasAuthorityPlayer = true;
+                    }
+                }
+                if (!hasAuthorityPlayer)
+                {
+                    authorityPlayerId = ov.AuthorityPlayerId;
+                    hasAuthorityPlayer = true;
+                }
+            }
+
+            // При конфликте ForceKinematic и ForceDynamic приоритет у кинематики для безопасности симуляции
+            if (forceKinematic)
+            {
+                forceDynamic = false;
+            }
+
+            veh.HasAuthorityOverride = true;
+            veh.OverrideAuthorityPlayerId = authorityPlayerId;
+            veh.OverrideForceKinematic = forceKinematic;
+            veh.OverrideForceDynamic = forceDynamic;
+            veh.OverrideSuppressWorldTransformSync = suppressWorldSync;
+        }
+
+        private void PublishTeleportEvent(TrackedVehicle veh, Vector3 newPosition, bool isLocalInitiated)
+        {
+            if (ctx?.Events == null || veh == null) return;
+            ctx.Events.Publish(new VehicleTeleportEvent
+            {
+                VehicleId = veh.Id,
+                VehicleTransform = veh.Transform,
+                NewPosition = newPosition,
+                IsLocalInitiated = isLocalInitiated
+            });
+        }
+
+        private void PublishRemoteTelemetryEvent(TrackedVehicle veh, bool isDrivenRemotely)
+        {
+            if (ctx?.Events == null || veh == null) return;
+            ctx.Events.Publish(new VehicleRemoteTelemetryEvent
+            {
+                VehicleId = veh.Id,
+                VehicleTransform = veh.Transform,
+                Rpm = veh.RemoteRpm,
+                Gear = veh.RemoteGear,
+                ThrottleInput = veh.RemoteThrottleInput,
+                SteerAngle = veh.RemoteSteerAngle,
+                IsDrivenRemotely = isDrivenRemotely
+            });
         }
     }
 }

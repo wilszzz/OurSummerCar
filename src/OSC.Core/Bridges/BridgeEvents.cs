@@ -61,4 +61,53 @@ namespace OSC.Core.Bridges
         public bool IsCarried;
         public GameObject TargetObject;
     }
+
+    /// <summary>
+    /// Событие-мост о телепорте транспорта (например, через BetterCheatBox или крупном скачке), чтобы подсистемы сбросили инерцию/сглаживание.
+    /// </summary>
+    public struct VehicleTeleportEvent
+    {
+        public int VehicleId;
+        public Transform VehicleTransform;
+        public Vector3 NewPosition;
+        public bool IsLocalInitiated;
+    }
+
+    /// <summary>
+    /// Событие-мост с удалённой телеметрией двигателя/руления транспорта для систем звука, приборной панели и трансмиссии.
+    /// </summary>
+    public struct VehicleRemoteTelemetryEvent
+    {
+        public int VehicleId;
+        public Transform VehicleTransform;
+        public float Rpm;
+        public int Gear;
+        public float ThrottleInput;
+        public float SteerAngle;
+        public bool IsDrivenRemotely;
+    }
+
+    /// <summary>
+    /// Событие-мост для переопределения физического авторитета транспорта (буксировка, погрузка в кузов, принудительная синхронизация).
+    /// </summary>
+    public struct VehiclePhysicsAuthorityEvent
+    {
+        public int VehicleId;
+        public Transform VehicleTransform;
+        public string SourceModuleId;
+        public bool OverrideActive;
+        public int AuthorityPlayerId;
+        public bool ForceKinematic;
+        public bool ForceDynamic;
+        public bool SuppressWorldTransformSync;
+    }
+
+    /// <summary>
+    /// Событие-мост для разрешения переноски объекта, даже если он привязан к родительскому транспорту (например, Jonnez в кузове Hayosiko).
+    /// </summary>
+    public struct VehicleCargoCarryAllowanceEvent
+    {
+        public GameObject TargetObject;
+        public bool AllowCarryWhenParented;
+    }
 }

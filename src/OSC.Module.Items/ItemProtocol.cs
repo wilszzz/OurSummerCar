@@ -51,14 +51,29 @@ namespace OSC.Module.Items
 
         public static bool IsSpecialCarryObject(GameObject go)
         {
+            return IsSpecialCarryObject(go, allowWhenParented: false);
+        }
+
+        public static bool IsSpecialCarryObject(GameObject go, bool allowWhenParented)
+        {
             if (go == null) return false;
             if (!go.name.StartsWith("JONNEZ", StringComparison.OrdinalIgnoreCase)) return false;
+            if (allowWhenParented) return true;
             return go.transform.parent == null || IsHandParent(go.transform.parent);
         }
 
         public static bool IsVehicleOrAttachedPart(GameObject go)
         {
+            return IsVehicleOrAttachedPart(go, allowSpecialCarryWhenParented: false);
+        }
+
+        public static bool IsVehicleOrAttachedPart(GameObject go, bool allowSpecialCarryWhenParented)
+        {
             if (go == null) return true;
+            if (allowSpecialCarryWhenParented && IsSpecialCarryObject(go, allowWhenParented: true))
+            {
+                return false;
+            }
 
             string name = go.name ?? string.Empty;
             string rootName = go.transform.root != null ? (go.transform.root.name ?? string.Empty) : string.Empty;
@@ -77,7 +92,7 @@ namespace OSC.Module.Items
                 rootName.StartsWith("JONNEZ", StringComparison.OrdinalIgnoreCase))
             {
                 // Разрешён только сам корневой мопед JONNEZ ES, но не его руль/вилка/колёса
-                return !IsSpecialCarryObject(go);
+                return !IsSpecialCarryObject(go, allowSpecialCarryWhenParented);
             }
 
             Transform p = go.transform.parent;
@@ -96,6 +111,11 @@ namespace OSC.Module.Items
         }
 
         public static bool IsValidPortableItem(GameObject go, OwnershipRegistry ownership, string moduleId)
+        {
+            return IsValidPortableItem(go, ownership, moduleId, allowSpecialCarryWhenParented: false);
+        }
+
+        public static bool IsValidPortableItem(GameObject go, OwnershipRegistry ownership, string moduleId, bool allowSpecialCarryWhenParented)
         {
             if (go == null) return false;
 
@@ -122,12 +142,12 @@ namespace OSC.Module.Items
                 return false;
             }
 
-            if (IsSpecialCarryObject(go))
+            if (IsSpecialCarryObject(go, allowSpecialCarryWhenParented))
             {
                 return true;
             }
 
-            if (IsVehicleOrAttachedPart(go))
+            if (IsVehicleOrAttachedPart(go, allowSpecialCarryWhenParented))
             {
                 return false;
             }

@@ -39,6 +39,13 @@ namespace OSC.Core.Network
         VehicleControlSync = 68,
         VehicleSystemToggle = 69,
         BoatEngineSync = 70,
+        VehicleFuelSync = 71,
+        VehicleRadioSync = 72,
+        VehicleTowingSync = 73,
+        VehicleDamageSync = 74,
+        VehicleFluidWearSync = 75,
+        JonnezStateSync = 76,
+        BoatMooringSync = 77,
 
         // 90..109: Модули предметов и сборки Satsuma (подготовка к Этапу 2)
         ItemPickUp = 90,

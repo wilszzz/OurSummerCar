@@ -101,13 +101,15 @@ namespace OSC.Core.Utilities
                 return "satsuma_engine_block";
             }
 
-            if ((go.name == "JONNEZ ES(Clone)" || go.name == "JONNEZ ES" || go.name.StartsWith("JONNEZ")) &&
+            if ((go.name == "JONNEZ ES(Clone)" || go.name == "JONNEZ ES" ||
+                 (go.name.StartsWith("JONNEZ") && go.GetComponent<Rigidbody>() != null)) &&
                 (go.transform.parent == null ||
                  go.transform.parent.name == "ItemPivot" ||
                  go.transform.parent.name == "ItemHolder" ||
                  go.transform.parent.name == "ToolHolder" ||
                  go.transform.parent.name == "HandHolder" ||
-                 go.transform.parent.name == "ItemHold"))
+                 go.transform.parent.name == "ItemHold" ||
+                 go.transform.parent.name.StartsWith("HAYOSIKO", StringComparison.OrdinalIgnoreCase)))
             {
                 return "jonnez_moped_unique";
             }
