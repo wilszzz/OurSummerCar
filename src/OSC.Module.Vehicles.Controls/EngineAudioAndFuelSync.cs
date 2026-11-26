@@ -66,41 +66,15 @@ namespace OSC.Module.Vehicles.Controls
         private float nextFuelScanTime;
         private float nextFuelCheckTime;
         private float nextEngineScanTime;
-        private float nextFluidSyncTime;
         private float nextIdleCheckTime;
 
-        // Satsuma жидкости / износ / номера
+        // Satsuma топливный бак и скрежет КПП (жидкости, износ и номера переданы в OSC.Module.Satsuma)
         private GameObject satsumaGo;
         private FuelTank satsumaFuelTank;
-        private PlayMakerFSM fanBeltFsm;
-        private PlayMakerFSM oilFsm;
-        private PlayMakerFSM oilpanFsm;
-        private PlayMakerFSM radiatorFsm;
-        private GameObject steamRadiatorObj;
-        private PlayMakerFSM brakeMasterFsm;
-        private PlayMakerFSM clutchMasterFsm;
-        private PlayMakerFSM rockerShaftFsm;
-        private PlayMakerFSM headGasketFsm;
-        private PlayMakerFSM piston1Fsm;
-        private PlayMakerFSM piston2Fsm;
-        private PlayMakerFSM piston3Fsm;
-        private PlayMakerFSM piston4Fsm;
         private PlayMakerFSM gearGrindingFsm;
-        private PlayMakerFSM regPlateFrontFsm;
-        private PlayMakerFSM regPlateRearFsm;
 
         private bool isSuppressingGrind;
         private bool wasGrinding;
-        private bool isSuppressingPlates;
-        private bool isSuppressingFluids;
-        private bool isSuppressingWear;
-
-        private float lastSentOil = -1f;
-        private float lastSentCoolant = -1f;
-        private float lastSentBrake = -1f;
-        private float lastSentClutch = -1f;
-        private bool lastSentBoiling;
-        private float lastFluidsHeartbeatTime;
 
         private bool IsNetworkRunning => ctx != null && ctx.Transport != null && ctx.Transport.IsRunning;
         private int LocalPlayerId => (ctx != null && ctx.Transport != null) ? ctx.Transport.LocalPlayerId : 0;
@@ -126,39 +100,14 @@ namespace OSC.Module.Vehicles.Controls
             nextFuelScanTime = 0f;
             nextFuelCheckTime = 0f;
             nextEngineScanTime = 0f;
-            nextFluidSyncTime = 0f;
             nextIdleCheckTime = 0f;
 
             satsumaGo = null;
             satsumaFuelTank = null;
-            fanBeltFsm = null;
-            oilFsm = null;
-            oilpanFsm = null;
-            radiatorFsm = null;
-            steamRadiatorObj = null;
-            brakeMasterFsm = null;
-            clutchMasterFsm = null;
-            rockerShaftFsm = null;
-            headGasketFsm = null;
-            piston1Fsm = null;
-            piston2Fsm = null;
-            piston3Fsm = null;
-            piston4Fsm = null;
             gearGrindingFsm = null;
-            regPlateFrontFsm = null;
-            regPlateRearFsm = null;
 
             isSuppressingGrind = false;
             wasGrinding = false;
-            isSuppressingPlates = false;
-            isSuppressingFluids = false;
-            isSuppressingWear = false;
-            lastSentOil = -1f;
-            lastSentCoolant = -1f;
-            lastSentBrake = -1f;
-            lastSentClutch = -1f;
-            lastSentBoiling = false;
-            lastFluidsHeartbeatTime = 0f;
         }
 
         public void OnLevelLoaded()
@@ -210,12 +159,6 @@ namespace OSC.Module.Vehicles.Controls
                     ScanSatsumaEngineAndFluids();
                 }
             }
-
-            if (ctx.Transport.IsServer && Time.time >= nextFluidSyncTime)
-            {
-                nextFluidSyncTime = Time.time + 0.5f;
-                SyncSatsumaFluidsIfNeeded();
-            }
         }
 
         public void SendSnapshotToClient(int clientId)
@@ -238,8 +181,6 @@ namespace OSC.Module.Vehicles.Controls
                     }
                 }
             }
-
-            SendSatsumaFluidsPacket(clientId);
         }
 
         public void HandleFuelPacket(PacketReader reader, int connectionId)
@@ -278,15 +219,11 @@ namespace OSC.Module.Vehicles.Controls
             switch (subType)
             {
                 case FluidWearSubType.SatsumaFluids:
-                    ApplySatsumaFluidsPacket(reader);
+                    // Передано в OSC.Module.Satsuma (PacketType 98)
                     break;
                 case FluidWearSubType.PartBreakage:
-                {
-                    string partName = reader.ReadString();
-                    byte breakType = reader.ReadByte();
-                    ApplyPartBreakage(partName, breakType);
+                    // Передано в OSC.Module.Satsuma (PacketType 98)
                     break;
-                }
                 case FluidWearSubType.GearGrind:
                 {
                     bool grinding = reader.ReadBoolean();
@@ -294,12 +231,8 @@ namespace OSC.Module.Vehicles.Controls
                     break;
                 }
                 case FluidWearSubType.LicensePlates:
-                {
-                    bool installed = reader.ReadBoolean();
-                    string plate = reader.ReadString();
-                    ApplyLicensePlates(installed, plate);
+                    // Передано в OSC.Module.Satsuma (PacketType 99)
                     break;
-                }
                 case FluidWearSubType.IdleThrottle:
                 {
                     byte vehId = reader.ReadByte();
@@ -599,7 +532,7 @@ namespace OSC.Module.Vehicles.Controls
 
         #endregion
 
-        #region Satsuma Fluids, Wear, Gear Grind & Plates
+        #region Satsuma FuelTank & GearGrinding
 
         private void ScanSatsumaEngineAndFluids()
         {
@@ -614,93 +547,6 @@ namespace OSC.Module.Vehicles.Controls
             {
                 satsumaFuelTank = UnityEngine.Object.FindObjectOfType<FuelTank>();
             }
-
-            if (fanBeltFsm == null)
-            {
-                GameObject motorGo = (satsumaGo != null ? PlayMakerBridge.FindChildRecursive(satsumaGo.transform, "_Motor")?.gameObject : null)
-                    ?? GameObject.Find("_Motor");
-                if (motorGo != null)
-                {
-                    fanBeltFsm = PlayMakerBridge.FindFsm(motorGo, "Fan Belt");
-                    if (fanBeltFsm != null && fanBeltFsm.HasState("No belt") && ctx.Ownership.TryClaim(fanBeltFsm, moduleId, "Satsuma_FanBelt"))
-                    {
-                        fanBeltFsm.InsertAction("No belt", () =>
-                        {
-                            if (!isSuppressingWear) SendPartBreakage("FanBelt", 2);
-                        }, 0, true);
-                    }
-                }
-            }
-
-            if (oilFsm == null)
-            {
-                GameObject oilGo = GameObject.Find("Oil") ?? GameObject.Find("Combustion");
-                if (oilGo != null)
-                {
-                    oilFsm = PlayMakerBridge.FindFsm(oilGo, "Oil") ??
-                             PlayMakerBridge.FindFsm(oilGo, "Pressure") ??
-                             PlayMakerBridge.FindFsm(oilGo, "Cylinders");
-                }
-            }
-            if (oilpanFsm == null)
-            {
-                GameObject oilpanGo = GameObject.Find("Oilpan");
-                if (oilpanGo != null) oilpanFsm = PlayMakerBridge.FindFsm(oilpanGo, "Data");
-            }
-            if (radiatorFsm == null)
-            {
-                GameObject radGo = GameObject.Find("Radiator") ?? GameObject.Find("racing radiator(Clone)") ??
-                                   GameObject.Find("radiator(Clone)") ?? GameObject.Find("Racing Radiator");
-                if (radGo != null) radiatorFsm = PlayMakerBridge.FindFsm(radGo, "Radiator") ?? radGo.GetComponent<PlayMakerFSM>();
-            }
-            if (steamRadiatorObj == null) steamRadiatorObj = GameObject.Find("SteamRadiator");
-            if (brakeMasterFsm == null)
-            {
-                GameObject go = GameObject.Find("BrakeMasterCylinder");
-                if (go != null) brakeMasterFsm = PlayMakerBridge.FindFsm(go, "Data");
-            }
-            if (clutchMasterFsm == null)
-            {
-                GameObject go = GameObject.Find("ClutchMasterCylinder");
-                if (go != null) clutchMasterFsm = PlayMakerBridge.FindFsm(go, "Data");
-            }
-
-            if (rockerShaftFsm == null)
-            {
-                GameObject rockerGo = GameObject.Find("rocker shaft(Clone)") ?? GameObject.Find("trigger_rocker shaft");
-                if (rockerGo != null)
-                {
-                    rockerShaftFsm = PlayMakerBridge.FindFsm(rockerGo, "Removal") ?? rockerGo.GetComponent<PlayMakerFSM>();
-                    if (rockerShaftFsm != null && rockerShaftFsm.HasState("Break") && ctx.Ownership.TryClaim(rockerShaftFsm, moduleId, "Satsuma_RockerShaft"))
-                    {
-                        rockerShaftFsm.InsertAction("Break", () =>
-                        {
-                            if (!isSuppressingWear) SendPartBreakage("RockerShaft", 4);
-                        }, 0, true);
-                    }
-                }
-            }
-
-            if (headGasketFsm == null)
-            {
-                GameObject gasketGo = GameObject.Find("head gasket(Clone)") ?? GameObject.Find("trigger_head gasket");
-                if (gasketGo != null)
-                {
-                    headGasketFsm = PlayMakerBridge.FindFsm(gasketGo, "Removal") ?? gasketGo.GetComponent<PlayMakerFSM>();
-                    if (headGasketFsm != null && headGasketFsm.HasState("Death") && ctx.Ownership.TryClaim(headGasketFsm, moduleId, "Satsuma_HeadGasket"))
-                    {
-                        headGasketFsm.InsertAction("Death", () =>
-                        {
-                            if (!isSuppressingWear) SendPartBreakage("HeadGasket", 1);
-                        }, 0, true);
-                    }
-                }
-            }
-
-            if (piston1Fsm == null) piston1Fsm = HookPiston("piston1(Clone)", 1);
-            if (piston2Fsm == null) piston2Fsm = HookPiston("piston2(Clone)", 2);
-            if (piston3Fsm == null) piston3Fsm = HookPiston("piston3(Clone)", 3);
-            if (piston4Fsm == null) piston4Fsm = HookPiston("piston4(Clone)", 4);
 
             if (gearGrindingFsm == null)
             {
@@ -735,217 +581,6 @@ namespace OSC.Module.Vehicles.Controls
                     }
                 }
             }
-
-            if (regPlateFrontFsm == null) regPlateFrontFsm = HookPlateFsm("RegPlateFront");
-            if (regPlateRearFsm == null) regPlateRearFsm = HookPlateFsm("RegPlateRear");
-        }
-
-        private PlayMakerFSM HookPiston(string goName, int idx)
-        {
-            GameObject pGo = GameObject.Find(goName) ?? GameObject.Find($"trigger_piston{idx}");
-            if (pGo == null) return null;
-            PlayMakerFSM fsm = PlayMakerBridge.FindFsm(pGo, "Removal") ??
-                               PlayMakerBridge.FindFsm(pGo, "Collision") ??
-                               pGo.GetComponent<PlayMakerFSM>();
-            if (fsm != null && fsm.HasState("Death") && ctx.Ownership.TryClaim(fsm, moduleId, $"Satsuma_Piston{idx}"))
-            {
-                fsm.InsertAction("Death", () =>
-                {
-                    if (!isSuppressingWear) SendPartBreakage($"Piston{idx}", 3);
-                }, 0, true);
-            }
-            return fsm;
-        }
-
-        private PlayMakerFSM HookPlateFsm(string objectName)
-        {
-            GameObject plateGo = (satsumaGo != null ? PlayMakerBridge.FindChildRecursive(satsumaGo.transform, objectName)?.gameObject : null)
-                ?? GameObject.Find(objectName);
-            if (plateGo == null) return null;
-
-            PlayMakerFSM fsm = PlayMakerBridge.FindFsm(plateGo, "Data");
-            if (fsm == null || !ctx.Ownership.TryClaim(fsm, moduleId, $"Satsuma_{objectName}")) return null;
-
-            fsm.AddSafeGlobalTransition("MP_SYNC_INSTALL", "Installed");
-            fsm.AddSafeGlobalTransition("MP_SYNC_DISABLE", "Disable plate");
-
-            if (fsm.HasState("Installed"))
-            {
-                fsm.InsertAction("Installed", () =>
-                {
-                    if (!isSuppressingPlates) SendLicensePlatesPacket(true, GetCurrentPlateString());
-                }, 0, true);
-            }
-            if (fsm.HasState("Disable plate"))
-            {
-                fsm.InsertAction("Disable plate", () =>
-                {
-                    if (!isSuppressingPlates) SendLicensePlatesPacket(false, GetCurrentPlateString());
-                }, 0, true);
-            }
-            return fsm;
-        }
-
-        private void SyncSatsumaFluidsIfNeeded()
-        {
-            if (isSuppressingFluids) return;
-            ReadCurrentFluids(out float oil, out float coolant, out float brake, out float clutch, out bool boiling);
-
-            bool changed = Mathf.Abs(oil - lastSentOil) > 0.02f ||
-                           Mathf.Abs(coolant - lastSentCoolant) > 0.02f ||
-                           Mathf.Abs(brake - lastSentBrake) > 0.02f ||
-                           Mathf.Abs(clutch - lastSentClutch) > 0.02f ||
-                           boiling != lastSentBoiling;
-
-            if (!changed && (Time.time - lastFluidsHeartbeatTime) < 2.5f) return;
-
-            lastSentOil = oil;
-            lastSentCoolant = coolant;
-            lastSentBrake = brake;
-            lastSentClutch = clutch;
-            lastSentBoiling = boiling;
-            lastFluidsHeartbeatTime = Time.time;
-
-            SendSatsumaFluidsPacket(-1);
-        }
-
-        private void ReadCurrentFluids(out float oil, out float coolant, out float brake, out float clutch, out bool boiling)
-        {
-            oil = 1f;
-            coolant = 1f;
-            brake = 1f;
-            clutch = 1f;
-            boiling = steamRadiatorObj != null && steamRadiatorObj.activeInHierarchy;
-
-            if (oilFsm != null)
-            {
-                FsmFloat oVar = oilFsm.FsmVariables.FindFsmFloat("Oil");
-                if (oVar != null) oil = oVar.Value;
-            }
-            else if (oilpanFsm != null)
-            {
-                FsmFloat oVar = oilpanFsm.FsmVariables.FindFsmFloat("Oil");
-                if (oVar != null) oil = oVar.Value;
-            }
-
-            if (radiatorFsm != null)
-            {
-                FsmFloat cVar = radiatorFsm.FsmVariables.FindFsmFloat("Coolant");
-                if (cVar != null) coolant = cVar.Value;
-            }
-
-            if (brakeMasterFsm != null)
-            {
-                FsmFloat bVar = brakeMasterFsm.FsmVariables.FindFsmFloat("BrakeFluid");
-                if (bVar != null) brake = bVar.Value;
-            }
-
-            if (clutchMasterFsm != null)
-            {
-                FsmFloat clVar = clutchMasterFsm.FsmVariables.FindFsmFloat("ClutchFluid");
-                if (clVar != null) clutch = clVar.Value;
-            }
-        }
-
-        private void SendSatsumaFluidsPacket(int targetClientId)
-        {
-            if (!IsNetworkRunning) return;
-            ReadCurrentFluids(out float oil, out float coolant, out float brake, out float clutch, out bool boiling);
-
-            using (var p = new PacketWriter(PacketType.VehicleFluidWearSync))
-            {
-                p.WriteByte((byte)FluidWearSubType.SatsumaFluids);
-                p.WriteInt32(LocalPlayerId);
-                p.WriteSingle(oil);
-                p.WriteSingle(coolant);
-                p.WriteSingle(brake);
-                p.WriteSingle(clutch);
-                p.WriteBoolean(boiling);
-                if (targetClientId >= 0) ctx.Transport.SendTo(p, targetClientId);
-                else ctx.Transport.Send(p);
-            }
-        }
-
-        private void ApplySatsumaFluidsPacket(PacketReader reader)
-        {
-            float oil = reader.ReadSingle();
-            float coolant = reader.ReadSingle();
-            float brake = reader.ReadSingle();
-            float clutch = reader.ReadSingle();
-            bool boiling = reader.ReadBoolean();
-
-            isSuppressingFluids = true;
-            try
-            {
-                if (oilFsm != null)
-                {
-                    FsmFloat oVar = oilFsm.FsmVariables.FindFsmFloat("Oil");
-                    if (oVar != null) oVar.Value = oil;
-                }
-                if (oilpanFsm != null)
-                {
-                    FsmFloat oVar = oilpanFsm.FsmVariables.FindFsmFloat("Oil");
-                    if (oVar != null) oVar.Value = oil;
-                }
-                if (radiatorFsm != null)
-                {
-                    FsmFloat cVar = radiatorFsm.FsmVariables.FindFsmFloat("Coolant");
-                    if (cVar != null) cVar.Value = coolant;
-                }
-                if (brakeMasterFsm != null)
-                {
-                    FsmFloat bVar = brakeMasterFsm.FsmVariables.FindFsmFloat("BrakeFluid");
-                    if (bVar != null) bVar.Value = brake;
-                }
-                if (clutchMasterFsm != null)
-                {
-                    FsmFloat clVar = clutchMasterFsm.FsmVariables.FindFsmFloat("ClutchFluid");
-                    if (clVar != null) clVar.Value = clutch;
-                }
-                if (steamRadiatorObj != null)
-                {
-                    steamRadiatorObj.SetActive(boiling);
-                }
-            }
-            finally
-            {
-                isSuppressingFluids = false;
-            }
-        }
-
-        private void SendPartBreakage(string partName, byte breakType)
-        {
-            if (!IsNetworkRunning) return;
-            using (var p = new PacketWriter(PacketType.VehicleFluidWearSync))
-            {
-                p.WriteByte((byte)FluidWearSubType.PartBreakage);
-                p.WriteInt32(LocalPlayerId);
-                p.WriteString(partName);
-                p.WriteByte(breakType);
-                ctx.Transport.Send(p);
-            }
-        }
-
-        private void ApplyPartBreakage(string partName, byte breakType)
-        {
-            isSuppressingWear = true;
-            try
-            {
-                if (breakType == 1 && headGasketFsm != null) headGasketFsm.SendEvent("DEATH");
-                else if (breakType == 2 && fanBeltFsm != null) fanBeltFsm.SendEvent("SNAP");
-                else if (breakType == 3)
-                {
-                    if (partName.Contains("1") && piston1Fsm != null) piston1Fsm.SendEvent("DEATH");
-                    else if (partName.Contains("2") && piston2Fsm != null) piston2Fsm.SendEvent("DEATH");
-                    else if (partName.Contains("3") && piston3Fsm != null) piston3Fsm.SendEvent("DEATH");
-                    else if (partName.Contains("4") && piston4Fsm != null) piston4Fsm.SendEvent("DEATH");
-                }
-                else if (breakType == 4 && rockerShaftFsm != null) rockerShaftFsm.SendEvent("BREAK");
-            }
-            finally
-            {
-                isSuppressingWear = false;
-            }
         }
 
         private void SendGearGrindPacket(bool isGrinding)
@@ -972,72 +607,6 @@ namespace OSC.Module.Vehicles.Controls
             {
                 isSuppressingGrind = false;
             }
-        }
-
-        private void SendLicensePlatesPacket(bool installed, string plateStr)
-        {
-            if (!IsNetworkRunning) return;
-            using (var p = new PacketWriter(PacketType.VehicleFluidWearSync))
-            {
-                p.WriteByte((byte)FluidWearSubType.LicensePlates);
-                p.WriteInt32(LocalPlayerId);
-                p.WriteBoolean(installed);
-                p.WriteString(plateStr ?? "VBX-403");
-                ctx.Transport.Send(p);
-            }
-        }
-
-        private void ApplyLicensePlates(bool installed, string plateStr)
-        {
-            isSuppressingPlates = true;
-            try
-            {
-                if (!string.IsNullOrEmpty(plateStr))
-                {
-                    RegPlateGen[] gens = satsumaGo != null
-                        ? satsumaGo.GetComponentsInChildren<RegPlateGen>(true)
-                        : UnityEngine.Object.FindObjectsOfType<RegPlateGen>();
-                    if (gens != null)
-                    {
-                        for (int i = 0; i < gens.Length; i++)
-                        {
-                            if (gens[i] == null) continue;
-                            gens[i].PlateString = plateStr;
-                            try
-                            {
-                                MethodInfo mi = typeof(RegPlateGen).GetMethod(
-                                    "GenerateRegPlate",
-                                    BindingFlags.NonPublic | BindingFlags.Instance,
-                                    null,
-                                    new[] { typeof(string) },
-                                    null);
-                                if (mi != null) mi.Invoke(gens[i], new object[] { plateStr });
-                                else gens[i].SendMessage("GenerateRegPlate", plateStr, SendMessageOptions.DontRequireReceiver);
-                            }
-                            catch { }
-                        }
-                    }
-                }
-
-                if (regPlateFrontFsm != null) regPlateFrontFsm.SendEvent(installed ? "MP_SYNC_INSTALL" : "MP_SYNC_DISABLE");
-                if (regPlateRearFsm != null) regPlateRearFsm.SendEvent(installed ? "MP_SYNC_INSTALL" : "MP_SYNC_DISABLE");
-            }
-            finally
-            {
-                isSuppressingPlates = false;
-            }
-        }
-
-        private string GetCurrentPlateString()
-        {
-            RegPlateGen[] gens = satsumaGo != null
-                ? satsumaGo.GetComponentsInChildren<RegPlateGen>(true)
-                : UnityEngine.Object.FindObjectsOfType<RegPlateGen>();
-            if (gens != null && gens.Length > 0 && gens[0] != null && !string.IsNullOrEmpty(gens[0].PlateString))
-            {
-                return gens[0].PlateString;
-            }
-            return "VBX-403";
         }
 
         #endregion
