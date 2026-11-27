@@ -288,7 +288,7 @@ namespace OSC.Module.Items
             for (int i = 0; i < allGos.Length; i++)
             {
                 GameObject go = allGos[i];
-                if (go == null || !go.name.StartsWith("lantern", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!BeerAndConsumablesSync.IsValidSceneObject(go) || string.IsNullOrEmpty(go.name) || !go.name.StartsWith("lantern", StringComparison.OrdinalIgnoreCase)) continue;
                 PlayMakerFSM fsm = PlayMakerBridge.FindFsm(go, "Use");
                 if (fsm == null || !ClaimFsm(fsm, $"Lantern_{lanternFsms.Count}")) continue;
 
@@ -627,7 +627,7 @@ namespace OSC.Module.Items
             var all = Resources.FindObjectsOfTypeAll<GameObject>();
             for (int i = 0; i < all.Length; i++)
             {
-                if (all[i] != null && all[i].name == objName) return all[i];
+                if (BeerAndConsumablesSync.IsValidSceneObject(all[i]) && all[i].name == objName) return all[i];
             }
             return null;
         }

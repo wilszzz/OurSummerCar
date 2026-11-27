@@ -9,6 +9,5 @@
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(OscDeployRoot)" SkipUnchangedFiles="true" />
     <MakeDir Directories="$(OscAssetRoot)\Modules" />
     <Copy SourceFiles="..\..\Assets\clothes.unity3d" DestinationFolder="$(OscAssetRoot)" SkipUnchangedFiles="true" Condition="Exists('..\..\Assets\clothes.unity3d')" />
-    <Copy SourceFiles="..\..\Assets\wreckmp.unity3d" DestinationFolder="$(OscAssetRoot)" SkipUnchangedFiles="true" Condition="Exists('..\..\Assets\wreckmp.unity3d')" />
   </Target>
 </Project>

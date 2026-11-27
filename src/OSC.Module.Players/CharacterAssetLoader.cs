@@ -7,18 +7,44 @@ namespace OSC.Module.Players
 {
     public static class CharacterAssetLoader
     {
+        private const string GlassesPath = "char/skeleton/pelvis/RotationBendPivot/spine_middle/spine_upper/headPivot/HeadRotationPivot/head/glasses";
+        private const string HeadgearPath = "char/skeleton/pelvis/RotationBendPivot/spine_middle/spine_upper/headPivot/HeadRotationPivot/head/head_end";
+        private const string BodyMeshPath = "char/bodymesh";
+        private const string ShoeLeftPath = "char/skeleton/thig_left/knee_left/ankle_left/shoeLeft";
+        private const string ShoeRightPath = "char/skeleton/thig_right/knee_right/ankle_right/shoeRight";
+
+        private static readonly PlayerAppearanceState DefaultState = new PlayerAppearanceState();
+
         private static AssetBundle clothesBundle;
         private static GameObject charPrefab;
+        private static GameObject settingsCharPrefab;
+        private static GameObject localPlayerSkinRenderPrefab;
 
         private static Texture2D[] faces;
         private static Texture2D[] shirts;
         private static Texture2D[] pants;
         private static Texture2D[] shoes;
 
+        private static int glassesCount;
+        private static int headgearCount;
+        private static string[] glassesNames = new string[0];
+        private static string[] headgearNames = new string[0];
+
         public static bool IsLoaded => charPrefab != null;
         public static bool HasAttemptedLoad { get; private set; }
         public static string LoadedPath { get; private set; } = string.Empty;
         public static string StatusMessage { get; private set; } = "Не загружен";
+
+        public static GameObject SettingsCharPrefab => settingsCharPrefab;
+        public static GameObject LocalPlayerSkinRenderPrefab => localPlayerSkinRenderPrefab;
+
+        public static Texture2D[] Faces => faces;
+        public static Texture2D[] Shirts => shirts;
+        public static Texture2D[] Pants => pants;
+        public static Texture2D[] Shoes => shoes;
+
+        public static int GlassesCount => glassesCount;
+        public static int HeadgearCount => headgearCount;
 
         public static bool LoadAssets(Action<string> log = null, bool force = false)
         {
@@ -28,7 +54,7 @@ namespace OSC.Module.Players
 
             try
             {
-                string myDocs = System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments);
+                string myDocs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
                 string executingDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? string.Empty;
 
                 var candidates = new List<string>();
@@ -76,30 +102,20 @@ namespace OSC.Module.Players
                     return false;
                 }
 
-                charPrefab = clothesBundle.LoadAsset<GameObject>("char.prefab") ?? clothesBundle.LoadAsset<GameObject>("char");
-                if (charPrefab == null)
-                {
-                    var allGo = clothesBundle.LoadAllAssets<GameObject>();
-                    if (allGo != null)
-                    {
-                        for (int i = 0; i < allGo.Length; i++)
-                        {
-                            if (allGo[i] != null && allGo[i].name.IndexOf("char", StringComparison.OrdinalIgnoreCase) >= 0)
-                            {
-                                charPrefab = allGo[i];
-                                break;
-                            }
-                        }
-                    }
-                }
-
+                GameObject[] allGoCache = null;
+                charPrefab = LoadPrefabAsset(clothesBundle, "char.prefab", "char", ref allGoCache);
                 if (charPrefab == null)
                 {
                     StatusMessage = "char.prefab не найден";
                     return false;
                 }
 
+                settingsCharPrefab = LoadPrefabAsset(clothesBundle, "Settings_Char.prefab", "Settings_Char", ref allGoCache);
+                localPlayerSkinRenderPrefab = LoadPrefabAsset(clothesBundle, "LocalPlayerSkinRender.prefab", "LocalPlayerSkinRender", ref allGoCache);
+
+                CacheHeadAccessoryMetadata(charPrefab);
                 LoadCustomizationTextures();
+
                 LoadedPath = bundlePath;
                 StatusMessage = "OK";
                 log?.Invoke($"[Игроки] 3D-модель загружена: {Path.GetFileName(bundlePath)}");
@@ -113,22 +129,67 @@ namespace OSC.Module.Players
             }
         }
 
-        private static void LoadCustomizationTextures()
+        public static int GetSlotOptionCount(ClothingSlot slot)
         {
-            if (clothesBundle == null) return;
-
-            faces = new Texture2D[17];
-            pants = new Texture2D[21];
-            shirts = new Texture2D[47];
-            shoes = new Texture2D[7];
-
-            for (int i = 1; i <= 47; i++)
+            switch (slot)
             {
-                string numStr = (i < 10) ? $"0{i}" : i.ToString();
-                if (i <= 17) faces[i - 1] = clothesBundle.LoadAsset<Texture2D>($"char_face{numStr}.png");
-                if (i <= 21) pants[i - 1] = clothesBundle.LoadAsset<Texture2D>($"char_pants{numStr}.png");
-                if (i <= 47) shirts[i - 1] = clothesBundle.LoadAsset<Texture2D>($"char_shirt{numStr}.png");
-                if (i <= 7) shoes[i - 1] = clothesBundle.LoadAsset<Texture2D>($"char_shoes{numStr}.png");
+                case ClothingSlot.Glasses:
+                    return glassesCount;
+                case ClothingSlot.Headgear:
+                    return headgearCount;
+                case ClothingSlot.Face:
+                    return faces != null ? faces.Length : SkinCatalogConstants.NumBuiltInFaces;
+                case ClothingSlot.Shirt:
+                    return shirts != null ? shirts.Length : SkinCatalogConstants.NumBuiltInShirts;
+                case ClothingSlot.Pants:
+                    return pants != null ? pants.Length : SkinCatalogConstants.NumBuiltInPants;
+                case ClothingSlot.Shoes:
+                    return (shoes != null ? shoes.Length : SkinCatalogConstants.NumBuiltInShoes) + 1;
+                default:
+                    return 0;
+            }
+        }
+
+        public static string GetSlotOptionName(ClothingSlot slot, int index)
+        {
+            switch (slot)
+            {
+                case ClothingSlot.Glasses:
+                    if (glassesNames != null && index >= 0 && index < glassesNames.Length)
+                    {
+                        return glassesNames[index];
+                    }
+                    return $"INDEX {index}";
+
+                case ClothingSlot.Headgear:
+                    if (headgearNames != null && index >= 0 && index < headgearNames.Length)
+                    {
+                        return headgearNames[index];
+                    }
+                    return $"INDEX {index}";
+
+                case ClothingSlot.Face:
+                    return $"INDEX {index}";
+
+                case ClothingSlot.Shirt:
+                    if (index >= 0 && index < SkinCatalogConstants.NamesShirts.Length)
+                    {
+                        return SkinCatalogConstants.NamesShirts[index];
+                    }
+                    return $"INDEX {index}";
+
+                case ClothingSlot.Pants:
+                    if (index >= 0 && index < SkinCatalogConstants.NamesPants.Length)
+                    {
+                        return SkinCatalogConstants.NamesPants[index];
+                    }
+                    return $"INDEX {index}";
+
+                case ClothingSlot.Shoes:
+                    return (index <= 0) ? "None" : $"INDEX {index}";
+
+                default:
+                    return $"INDEX {index}";
             }
         }
 
@@ -147,7 +208,12 @@ namespace OSC.Module.Players
                     characterObj.transform.localRotation = Quaternion.identity;
                 }
 
-                ApplyClothing(characterObj, playerId);
+                var initial = new PlayerAppearanceState();
+                initial.SlotIndices[(int)ClothingSlot.Face] = (byte)((playerId == 0) ? 0 : 1);
+                initial.SlotIndices[(int)ClothingSlot.Shirt] = (byte)((playerId == 0) ? 0 : 4);
+                initial.SlotIndices[(int)ClothingSlot.Pants] = (byte)((playerId == 0) ? 0 : 2);
+                initial.SlotIndices[(int)ClothingSlot.Shoes] = (byte)((playerId == 0) ? 1 : 2);
+                ApplyAppearance(characterObj, initial, null, false, log);
                 return characterObj;
             }
             catch (Exception ex)
@@ -157,43 +223,302 @@ namespace OSC.Module.Players
             }
         }
 
-        private static void ApplyClothing(GameObject characterObj, int playerId)
+        public static GameObject InstantiateCustomModel(string name, Transform parent, Action<string> log = null)
         {
+            if (charPrefab == null && !LoadAssets(log)) return null;
+
             try
             {
-                var bodyRenderer = characterObj.transform.Find("char/bodymesh")?.GetComponent<SkinnedMeshRenderer>();
-                if (bodyRenderer != null)
+                GameObject characterObj = UnityEngine.Object.Instantiate(charPrefab);
+                characterObj.name = string.IsNullOrEmpty(name) ? "CustomCharModel" : name;
+                if (parent != null)
                 {
-                    Material shirtMat = new Material(bodyRenderer.materials[0]);
-                    Material pantsMat = new Material(bodyRenderer.materials[1]);
-                    Material faceMat = new Material(bodyRenderer.materials[2]);
+                    characterObj.transform.SetParent(parent, false);
+                    characterObj.transform.localPosition = Vector3.zero;
+                    characterObj.transform.localRotation = Quaternion.identity;
+                    characterObj.transform.localScale = Vector3.one;
+                }
+                return characterObj;
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"[InstantiateCustomModel Error] {ex.Message}");
+                return null;
+            }
+        }
 
-                    int shirtIdx = (playerId == 0) ? 0 : 4;
-                    int pantsIdx = (playerId == 0) ? 0 : 2;
-                    int faceIdx = (playerId == 0) ? 0 : 1;
+        public static void ApplyAppearance(
+            GameObject characterObj,
+            PlayerAppearanceState state,
+            CustomSkinTextureManager texManager,
+            bool hideHeadgearForHelmet = false,
+            Action<string> log = null)
+        {
+            if (characterObj == null) return;
+            if (!IsLoaded) LoadAssets(log);
 
-                    if (shirts != null && shirtIdx < shirts.Length && shirts[shirtIdx] != null) shirtMat.mainTexture = shirts[shirtIdx];
-                    if (pants != null && pantsIdx < pants.Length && pants[pantsIdx] != null) pantsMat.mainTexture = pants[pantsIdx];
-                    if (faces != null && faceIdx < faces.Length && faces[faceIdx] != null) faceMat.mainTexture = faces[faceIdx];
+            PlayerAppearanceState activeState = state ?? DefaultState;
 
-                    bodyRenderer.materials = new Material[] { shirtMat, pantsMat, faceMat };
+            try
+            {
+                CharacterMaterialCache cache = EnsureMaterialCache(characterObj);
+
+                if (cache.GlassesRoot != null && cache.GlassesRoot.childCount > 0)
+                {
+                    int glassIdx = Mathf.Clamp(activeState.SlotIndices[(int)ClothingSlot.Glasses], 0, cache.GlassesRoot.childCount - 1);
+                    for (int i = 0; i < cache.GlassesRoot.childCount; i++)
+                    {
+                        cache.GlassesRoot.GetChild(i).gameObject.SetActive(i == glassIdx);
+                    }
                 }
 
-                var shoeL = characterObj.transform.Find("char/skeleton/thig_left/knee_left/ankle_left/shoeLeft")?.GetComponent<MeshRenderer>();
-                var shoeR = characterObj.transform.Find("char/skeleton/thig_right/knee_right/ankle_right/shoeRight")?.GetComponent<MeshRenderer>();
-                if (shoeL != null && shoeR != null && shoes != null)
+                if (cache.HeadgearRoot != null && cache.HeadgearRoot.childCount > 0)
                 {
-                    int shoeIdx = (playerId == 0) ? 0 : 1;
-                    if (shoeIdx < shoes.Length && shoes[shoeIdx] != null)
+                    int headIdx = Mathf.Clamp(activeState.SlotIndices[(int)ClothingSlot.Headgear], 0, cache.HeadgearRoot.childCount - 1);
+                    for (int i = 0; i < cache.HeadgearRoot.childCount; i++)
                     {
-                        Material shoeMat = new Material(shoeL.material);
-                        shoeMat.mainTexture = shoes[shoeIdx];
-                        shoeL.material = shoeMat;
-                        shoeR.material = shoeMat;
+                        cache.HeadgearRoot.GetChild(i).gameObject.SetActive(!hideHeadgearForHelmet && i == headIdx);
+                    }
+                }
+
+                if (cache.FaceMat != null)
+                {
+                    Texture2D faceTex = ResolveSlotTexture(activeState, texManager, CustomTexSlot.Face, ClothingSlot.Face, faces);
+                    if (faceTex != null) cache.FaceMat.mainTexture = faceTex;
+                }
+
+                if (cache.ShirtMat != null)
+                {
+                    Texture2D shirtTex = ResolveSlotTexture(activeState, texManager, CustomTexSlot.Shirt, ClothingSlot.Shirt, shirts);
+                    if (shirtTex != null) cache.ShirtMat.mainTexture = shirtTex;
+                }
+
+                if (cache.PantsMat != null)
+                {
+                    Texture2D pantsTex = ResolveSlotTexture(activeState, texManager, CustomTexSlot.Pants, ClothingSlot.Pants, pants);
+                    if (pantsTex != null) cache.PantsMat.mainTexture = pantsTex;
+                }
+
+                int shoeIdx = activeState.SlotIndices[(int)ClothingSlot.Shoes];
+                bool showShoes = shoeIdx > 0;
+
+                if (cache.ShoeLeftRenderer != null)
+                {
+                    cache.ShoeLeftRenderer.gameObject.SetActive(showShoes);
+                }
+                if (cache.ShoeRightRenderer != null)
+                {
+                    cache.ShoeRightRenderer.gameObject.SetActive(showShoes);
+                }
+
+                if (showShoes && cache.ShoeMat != null)
+                {
+                    Texture2D shoeTex = ResolveCustomTexture(activeState, texManager, CustomTexSlot.Shoes);
+                    if (shoeTex == null && shoes != null && shoes.Length > 0)
+                    {
+                        int builtInIdx = Mathf.Clamp(shoeIdx - 1, 0, shoes.Length - 1);
+                        shoeTex = shoes[builtInIdx];
+                    }
+                    if (shoeTex != null) cache.ShoeMat.mainTexture = shoeTex;
+                }
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"[ApplyAppearance Error] {ex.Message}");
+            }
+        }
+
+        private static Texture2D ResolveSlotTexture(
+            PlayerAppearanceState state,
+            CustomSkinTextureManager texManager,
+            CustomTexSlot customSlot,
+            ClothingSlot clothingSlot,
+            Texture2D[] builtInTextures)
+        {
+            Texture2D customTex = ResolveCustomTexture(state, texManager, customSlot);
+            if (customTex != null) return customTex;
+
+            if (builtInTextures == null || builtInTextures.Length == 0) return null;
+            int idx = Mathf.Clamp(state.SlotIndices[(int)clothingSlot], 0, builtInTextures.Length - 1);
+            return builtInTextures[idx];
+        }
+
+        private static Texture2D ResolveCustomTexture(
+            PlayerAppearanceState state,
+            CustomSkinTextureManager texManager,
+            CustomTexSlot customSlot)
+        {
+            if (texManager == null || state == null || !state.HasCustomTexture(customSlot))
+            {
+                return null;
+            }
+            return texManager.GetTextureByCrc(state.CustomCrc32[(int)customSlot], state.IsPointFiltered(customSlot));
+        }
+
+        private static CharacterMaterialCache EnsureMaterialCache(GameObject characterObj)
+        {
+            var cache = characterObj.GetComponent<CharacterMaterialCache>();
+            if (cache == null)
+            {
+                cache = characterObj.AddComponent<CharacterMaterialCache>();
+            }
+            if (cache.Initialized) return cache;
+
+            Transform bodyTf = characterObj.transform.Find(BodyMeshPath);
+            if (bodyTf != null)
+            {
+                cache.BodyRenderer = bodyTf.GetComponent<SkinnedMeshRenderer>();
+                if (cache.BodyRenderer != null)
+                {
+                    Material[] srcMats = cache.BodyRenderer.sharedMaterials;
+                    if (srcMats != null && srcMats.Length >= 3)
+                    {
+                        cache.ShirtMat = new Material(srcMats[0]);
+                        cache.PantsMat = new Material(srcMats[1]);
+                        cache.FaceMat = new Material(srcMats[2]);
+                        cache.BodyRenderer.materials = new Material[] { cache.ShirtMat, cache.PantsMat, cache.FaceMat };
                     }
                 }
             }
-            catch { }
+
+            Transform shoeLTf = characterObj.transform.Find(ShoeLeftPath);
+            Transform shoeRTf = characterObj.transform.Find(ShoeRightPath);
+            if (shoeLTf != null) cache.ShoeLeftRenderer = shoeLTf.GetComponent<MeshRenderer>();
+            if (shoeRTf != null) cache.ShoeRightRenderer = shoeRTf.GetComponent<MeshRenderer>();
+
+            if (cache.ShoeLeftRenderer != null)
+            {
+                Material srcShoeMat = cache.ShoeLeftRenderer.sharedMaterial ?? cache.ShoeLeftRenderer.material;
+                if (srcShoeMat != null)
+                {
+                    cache.ShoeMat = new Material(srcShoeMat);
+                    cache.ShoeLeftRenderer.material = cache.ShoeMat;
+                    if (cache.ShoeRightRenderer != null)
+                    {
+                        cache.ShoeRightRenderer.material = cache.ShoeMat;
+                    }
+                }
+            }
+
+            cache.GlassesRoot = characterObj.transform.Find(GlassesPath);
+            cache.HeadgearRoot = characterObj.transform.Find(HeadgearPath);
+            cache.Initialized = true;
+            return cache;
+        }
+
+        private static GameObject LoadPrefabAsset(
+            AssetBundle bundle,
+            string primaryAssetName,
+            string shortName,
+            ref GameObject[] allGameObjectsCache)
+        {
+            GameObject prefab = bundle.LoadAsset<GameObject>(primaryAssetName);
+            if (prefab != null) return prefab;
+
+            prefab = bundle.LoadAsset<GameObject>(shortName);
+            if (prefab != null) return prefab;
+
+            if (allGameObjectsCache == null)
+            {
+                allGameObjectsCache = bundle.LoadAllAssets<GameObject>();
+            }
+            if (allGameObjectsCache != null)
+            {
+                for (int i = 0; i < allGameObjectsCache.Length; i++)
+                {
+                    GameObject go = allGameObjectsCache[i];
+                    if (go != null && string.Equals(go.name, shortName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return go;
+                    }
+                }
+                for (int i = 0; i < allGameObjectsCache.Length; i++)
+                {
+                    GameObject go = allGameObjectsCache[i];
+                    if (go != null && go.name.IndexOf(shortName, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return go;
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static void CacheHeadAccessoryMetadata(GameObject prefab)
+        {
+            glassesCount = 0;
+            headgearCount = 0;
+            glassesNames = new string[0];
+            headgearNames = new string[0];
+
+            if (prefab == null) return;
+
+            Transform glassesTf = prefab.transform.Find(GlassesPath);
+            if (glassesTf != null)
+            {
+                glassesCount = glassesTf.childCount;
+                glassesNames = new string[glassesCount];
+                for (int i = 0; i < glassesCount; i++)
+                {
+                    glassesNames[i] = glassesTf.GetChild(i).name;
+                }
+            }
+
+            Transform headEndTf = prefab.transform.Find(HeadgearPath);
+            if (headEndTf != null)
+            {
+                headgearCount = headEndTf.childCount;
+                headgearNames = new string[headgearCount];
+                for (int i = 0; i < headgearCount; i++)
+                {
+                    headgearNames[i] = headEndTf.GetChild(i).name;
+                }
+            }
+        }
+
+        private static void LoadCustomizationTextures()
+        {
+            if (clothesBundle == null) return;
+
+            faces = new Texture2D[SkinCatalogConstants.NumBuiltInFaces];
+            pants = new Texture2D[SkinCatalogConstants.NumBuiltInPants];
+            shirts = new Texture2D[SkinCatalogConstants.NumBuiltInShirts];
+            shoes = new Texture2D[SkinCatalogConstants.NumBuiltInShoes];
+
+            int maxCount = Math.Max(
+                Math.Max(SkinCatalogConstants.NumBuiltInFaces, SkinCatalogConstants.NumBuiltInPants),
+                Math.Max(SkinCatalogConstants.NumBuiltInShirts, SkinCatalogConstants.NumBuiltInShoes));
+
+            for (int i = 1; i <= maxCount; i++)
+            {
+                string numStr = (i < 10) ? ("0" + i.ToString()) : i.ToString();
+                if (i <= faces.Length) faces[i - 1] = clothesBundle.LoadAsset<Texture2D>($"char_face{numStr}.png");
+                if (i <= pants.Length) pants[i - 1] = clothesBundle.LoadAsset<Texture2D>($"char_pants{numStr}.png");
+                if (i <= shirts.Length) shirts[i - 1] = clothesBundle.LoadAsset<Texture2D>($"char_shirt{numStr}.png");
+                if (i <= shoes.Length) shoes[i - 1] = clothesBundle.LoadAsset<Texture2D>($"char_shoes{numStr}.png");
+            }
+        }
+
+        internal sealed class CharacterMaterialCache : MonoBehaviour
+        {
+            public SkinnedMeshRenderer BodyRenderer;
+            public Material ShirtMat;
+            public Material PantsMat;
+            public Material FaceMat;
+            public MeshRenderer ShoeLeftRenderer;
+            public MeshRenderer ShoeRightRenderer;
+            public Material ShoeMat;
+            public Transform GlassesRoot;
+            public Transform HeadgearRoot;
+            public bool Initialized;
+
+            private void OnDestroy()
+            {
+                if (ShirtMat != null) Destroy(ShirtMat);
+                if (PantsMat != null) Destroy(PantsMat);
+                if (FaceMat != null) Destroy(FaceMat);
+                if (ShoeMat != null) Destroy(ShoeMat);
+            }
         }
     }
 }

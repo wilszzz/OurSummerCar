@@ -10,6 +10,7 @@ namespace OSC.Core.Network
         Pong = 2,
         HandshakeRequest = 3,
         HandshakeResponse = 4,
+        WorldReadyResync = 5,
 
         // 20..39: Модуль игроков и анимаций
         PlayerSync = 20,

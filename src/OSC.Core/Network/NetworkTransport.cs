@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -56,11 +57,18 @@ namespace OSC.Core.Network
         public event Action<int> OnClientConnected;
         public event Action<int> OnClientDisconnected;
         public event Action<byte[], PacketReader, int> OnRawPacketReceived;
+        public event Action OnWorldReadyResyncRequested;
         public event Action<string> OnLog;
 
         private int currentServerPort = -1;
+        private bool pendingConnectCallbackUntilWorldReady;
 
         public void StartServer(int port)
+        {
+            StartServer(port, false);
+        }
+
+        public void StartServer(int port, bool quietIfPortBusy)
         {
             if (IsServer && serverListener != null && currentServerPort == port)
             {
@@ -78,8 +86,6 @@ namespace OSC.Core.Network
                 try
                 {
                     serverListener = new TcpListener(IPAddress.Any, port);
-                    try { serverListener.ExclusiveAddressUse = false; } catch { }
-                    try { serverListener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true); } catch { }
                     serverListener.Start();
                     serverAcceptThread = new Thread(ServerAcceptLoop) { IsBackground = true, Name = "OSC_ServerAcceptThread" };
                     serverAcceptThread.Start();
@@ -92,6 +98,14 @@ namespace OSC.Core.Network
                     {
                         try { serverListener.Stop(); } catch { }
                         serverListener = null;
+                    }
+
+                    if (quietIfPortBusy && sex.SocketErrorCode == SocketError.AddressAlreadyInUse)
+                    {
+                        IsServer = false;
+                        currentServerPort = -1;
+                        Log("[Авто-Хост] Порт " + port + " уже занят Хостом — окно работает в режиме Клиента.");
+                        return;
                     }
 
                     if (attempt < 2)
@@ -245,6 +259,7 @@ namespace OSC.Core.Network
 
             IsServer = false;
             IsClient = false;
+            pendingConnectCallbackUntilWorldReady = false;
             LastPingRTT = -1;
             Log("[Сеть] Соединение остановлено.");
         }
@@ -330,13 +345,31 @@ namespace OSC.Core.Network
         {
             using (var p = new PacketWriter(PacketType.Ping))
             {
-                p.WriteInt64(DateTime.UtcNow.Ticks);
+                p.WriteInt64(Stopwatch.GetTimestamp());
                 Send(p);
             }
         }
 
         public void PollEvents()
         {
+            PollEvents(true);
+        }
+
+        public void PollEvents(bool isInGameWorld)
+        {
+            if (isInGameWorld && pendingConnectCallbackUntilWorldReady)
+            {
+                pendingConnectCallbackUntilWorldReady = false;
+                if (IsServer && ConnectedClientsCount > 0)
+                {
+                    OnClientConnected?.Invoke(1);
+                }
+                else if (IsClient && IsRunning)
+                {
+                    OnClientConnected?.Invoke(0);
+                }
+            }
+
             while (true)
             {
                 EventItem ev;
@@ -349,16 +382,118 @@ namespace OSC.Core.Network
                 switch (ev.Type)
                 {
                     case EventItem.EventType.Connected:
-                        OnClientConnected?.Invoke(ev.ConnectionId);
+                        if (isInGameWorld)
+                        {
+                            OnClientConnected?.Invoke(ev.ConnectionId);
+                        }
+                        else
+                        {
+                            pendingConnectCallbackUntilWorldReady = true;
+                        }
                         break;
                     case EventItem.EventType.Disconnected:
+                        pendingConnectCallbackUntilWorldReady = false;
                         OnClientDisconnected?.Invoke(ev.ConnectionId);
                         break;
                     case EventItem.EventType.Data:
+                        if (ev.Data == null || ev.Data.Length == 0) continue;
+                        byte pktType = ev.Data[0];
+                        if (pktType == (byte)PacketType.WorldReadyResync)
+                        {
+                            if (isInGameWorld)
+                            {
+                                OnWorldReadyResyncRequested?.Invoke();
+                            }
+                            else
+                            {
+                                pendingConnectCallbackUntilWorldReady = true;
+                            }
+                            continue;
+                        }
+                        if (!isInGameWorld && pktType >= 20)
+                        {
+                            continue;
+                        }
                         HandleIncomingPacket(ev.Data, ev.ConnectionId);
                         break;
                 }
             }
+        }
+
+        public void NotifyGameWorldLoaded()
+        {
+            pendingConnectCallbackUntilWorldReady = false;
+            if (IsServer && ConnectedClientsCount > 0)
+            {
+                OnClientConnected?.Invoke(1);
+            }
+            else if (IsClient && IsRunning)
+            {
+                OnClientConnected?.Invoke(0);
+                using (var p = new PacketWriter(PacketType.WorldReadyResync))
+                {
+                    p.WriteByte(1);
+                    Send(p);
+                }
+                SendPing();
+            }
+        }
+
+        public void TriggerServerResyncToClients()
+        {
+            if (IsServer && ConnectedClientsCount > 0)
+            {
+                OnClientConnected?.Invoke(1);
+            }
+        }
+
+        private bool TryHandleFastPingPong(byte[] packet, ConnectedClient senderClient)
+        {
+            if (packet == null || packet.Length < 9) return false;
+
+            byte type = packet[0];
+            if (type == (byte)PacketType.Ping)
+            {
+                byte[] pong = new byte[9];
+                pong[0] = (byte)PacketType.Pong;
+                Buffer.BlockCopy(packet, 1, pong, 1, 8);
+
+                if (IsServer && senderClient != null)
+                {
+                    byte[] framed = new byte[13];
+                    Buffer.BlockCopy(BitConverter.GetBytes(pong.Length), 0, framed, 0, 4);
+                    Buffer.BlockCopy(pong, 0, framed, 4, 9);
+                    try
+                    {
+                        lock (senderClient.Stream)
+                        {
+                            senderClient.Stream.Write(framed, 0, framed.Length);
+                        }
+                    }
+                    catch { }
+                }
+                else if (IsClient)
+                {
+                    SendRaw(pong);
+                }
+                return true;
+            }
+
+            if (type == (byte)PacketType.Pong)
+            {
+                long sentStamp = BitConverter.ToInt64(packet, 1);
+                if (sentStamp > 0)
+                {
+                    long rtt = ((Stopwatch.GetTimestamp() - sentStamp) * 1000L) / Stopwatch.Frequency;
+                    if (rtt >= 0 && rtt < 60000)
+                    {
+                        LastPingRTT = rtt;
+                    }
+                }
+                return true;
+            }
+
+            return false;
         }
 
         private void HandleIncomingPacket(byte[] data, int connectionId)
@@ -370,10 +505,10 @@ namespace OSC.Core.Network
                 {
                     if (reader.UnreadBytes >= 8)
                     {
-                        long sentTicks = reader.ReadInt64();
+                        long sentStamp = reader.ReadInt64();
                         using (var pong = new PacketWriter(PacketType.Pong))
                         {
-                            pong.WriteInt64(sentTicks);
+                            pong.WriteInt64(sentStamp);
                             SendTo(pong, connectionId);
                         }
                     }
@@ -383,10 +518,10 @@ namespace OSC.Core.Network
                 {
                     if (reader.UnreadBytes >= 8)
                     {
-                        long sentTicks = reader.ReadInt64();
-                        if (sentTicks > 0)
+                        long sentStamp = reader.ReadInt64();
+                        if (sentStamp > 0)
                         {
-                            long rtt = (DateTime.UtcNow.Ticks - sentTicks) / TimeSpan.TicksPerMillisecond;
+                            long rtt = ((Stopwatch.GetTimestamp() - sentStamp) * 1000L) / Stopwatch.Frequency;
                             if (rtt >= 0 && rtt < 60000)
                             {
                                 LastPingRTT = rtt;
@@ -447,6 +582,7 @@ namespace OSC.Core.Network
                 {
                     byte[] packet = ReadFramedPacket(client.Stream);
                     if (packet == null) break;
+                    if (TryHandleFastPingPong(packet, client)) continue;
                     EnqueueEvent(new EventItem { Type = EventItem.EventType.Data, ConnectionId = client.Id, Data = packet });
                 }
             }
@@ -468,6 +604,7 @@ namespace OSC.Core.Network
                 {
                     byte[] packet = ReadFramedPacket(clientStream);
                     if (packet == null) break;
+                    if (TryHandleFastPingPong(packet, null)) continue;
                     EnqueueEvent(new EventItem { Type = EventItem.EventType.Data, ConnectionId = 0, Data = packet });
                 }
             }

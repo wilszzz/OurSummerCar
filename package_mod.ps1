@@ -49,7 +49,7 @@ foreach ($dll in $moduleDlls) {
     Write-Host "  + $($dll.Name)" -ForegroundColor Gray
 }
 
-foreach ($assetName in @("clothes.unity3d", "wreckmp.unity3d")) {
+foreach ($assetName in @("clothes.unity3d")) {
     $assetSrc = Join-Path $repoRoot "Assets\$assetName"
     if (Test-Path -LiteralPath $assetSrc) {
         Copy-Item -LiteralPath $assetSrc -Destination (Join-Path $assetsOut $assetName) -Force
@@ -92,7 +92,6 @@ copy /Y "Mods\Assets\OurSummerCar\Modules\*.dll" "%TARGET_MODS%\Assets\OurSummer
 
 echo [*] Копирование 3D-ассетов...
 if exist "Mods\Assets\OurSummerCar\clothes.unity3d" copy /Y "Mods\Assets\OurSummerCar\clothes.unity3d" "%TARGET_MODS%\Assets\OurSummerCar\clothes.unity3d" >nul
-if exist "Mods\Assets\OurSummerCar\wreckmp.unity3d" copy /Y "Mods\Assets\OurSummerCar\wreckmp.unity3d" "%TARGET_MODS%\Assets\OurSummerCar\wreckmp.unity3d" >nul
 
 echo ===================================================
 echo  [V] OurSummerCar успешно установлен!
@@ -109,7 +108,7 @@ OurSummerCar ($VersionTag) - Инструкция по установке:
    - Mods\OurSummerCar.dll
    - Mods\Assets\OurSummerCar\Core\OSC.Core.dll
    - Mods\Assets\OurSummerCar\Modules\OSC.Module.*.dll
-   - Mods\Assets\OurSummerCar\clothes.unity3d (и wreckmp.unity3d при наличии)
+   - Mods\Assets\OurSummerCar\clothes.unity3d
    Либо вручную скопируйте папку 'Mods' в Documents\MySummerCar\.
 
 2. Запустите My Summer Car (MSCLoader).

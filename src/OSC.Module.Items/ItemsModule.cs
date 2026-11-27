@@ -239,7 +239,7 @@ namespace OSC.Module.Items
             for (int i = 0; i < rbs.Length; i++)
             {
                 Rigidbody rb = rbs[i];
-                if (rb == null || rb.gameObject == null) continue;
+                if (rb == null || !BeerAndConsumablesSync.IsValidSceneObject(rb.gameObject)) continue;
                 GameObject go = rb.gameObject;
 
                 if (ItemValidator.IsSpecialCarryObject(go, IsCargoCarryAllowed(go))) continue;

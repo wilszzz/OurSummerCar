@@ -21,6 +21,13 @@ namespace OSC.Module.Players
         private readonly Dictionary<int, RemotePuppet> puppets = new Dictionary<int, RemotePuppet>();
         private readonly Dictionary<int, string> nicknames = new Dictionary<int, string>();
 
+        private SkinPresetCollection skinProfiles;
+        private CustomSkinTextureManager texManager;
+        private PlayerAppearanceNetworkSync appearanceSync;
+        private OptionsMenuSkinUI optionsMenuSkinUi;
+        private SkinWardrobeStudioUI wardrobeUi;
+        private bool isApplyingAppearanceChange;
+
         private Transform localPlayer;
         private CharacterController localCc;
         private Transform localCamPivot;
@@ -33,11 +40,34 @@ namespace OSC.Module.Players
         private float nextHandshakeTime;
         private string lastSentNick = string.Empty;
 
-        private sealed class RuntimeCoroutineBridge : MonoBehaviour { }
+        private sealed class RuntimeCoroutineBridge : MonoBehaviour
+        {
+            public Action OnUpdateCallback;
+            public Action OnGuiCallback;
+
+            private void Update()
+            {
+                OnUpdateCallback?.Invoke();
+            }
+
+            private void OnGUI()
+            {
+                OnGuiCallback?.Invoke();
+            }
+        }
 
         public void Initialize(OscHostContext context)
         {
             ctx = context;
+
+            skinProfiles = new SkinPresetCollection();
+            texManager = new CustomSkinTextureManager(ctx.Log);
+            texManager.EnsureFoldersAndScan();
+            skinProfiles.Load(texManager.ProfilesConfigPath, ctx.Log);
+
+            appearanceSync = new PlayerAppearanceNetworkSync(ctx, ModuleId, skinProfiles, texManager, HandleRemoteAppearanceReady, ctx.Log);
+            wardrobeUi = new SkinWardrobeStudioUI(skinProfiles, texManager, HandleLocalAppearanceChanged, ctx.Log);
+            optionsMenuSkinUi = new OptionsMenuSkinUI(skinProfiles, texManager, HandleLocalAppearanceChanged, ctx.Log);
 
             ctx.Router.Register(PacketType.HandshakeRequest, ModuleId, HandleHandshakeRequest);
             ctx.Router.Register(PacketType.HandshakeResponse, ModuleId, HandleHandshakeResponse);
@@ -45,27 +75,41 @@ namespace OSC.Module.Players
             ctx.Router.Register(PacketType.PlayerGesture, ModuleId, HandlePlayerGesture, relayOnServer: true);
             ctx.Router.Register(PacketType.PlayerUrinate, ModuleId, HandlePlayerUrinate, relayOnServer: true);
             ctx.Router.Register(PacketType.PlayerSwear, ModuleId, HandlePlayerSwear, relayOnServer: true);
+            ctx.Router.Register(PacketType.PlayerAppearance, ModuleId, appearanceSync.HandlePacket, relayOnServer: true);
 
             ctx.Events.Subscribe<RemotePlayerSeatEvent>(HandleRemoteSeatBridge);
             ctx.Events.Subscribe<LocalPlayerOccupancyEvent>(HandleLocalOccupancyBridge);
             ctx.Events.Subscribe<PlayerHeldItemEvent>(HandleHeldItemBridge);
             ctx.Events.Subscribe<LocalPlayerSleepStateEvent>(HandleLocalSleepBridge);
             ctx.Events.Subscribe<RemotePlayerSleepStateEvent>(HandleRemoteSleepBridge);
+            ctx.Events.Subscribe<ToggleSkinWardrobeEvent>(HandleToggleSkinWardrobe);
 
             ctx.Transport.OnClientConnected += HandleClientConnected;
             ctx.Transport.OnClientDisconnected += HandleClientDisconnected;
 
             animTracker.OnGestureAction += SendGesture;
             animTracker.OnSwearAction += SendSwear;
+
+            EnsureCoroutineHost();
+            CharacterAssetLoader.LoadAssets(ctx.Log);
+            PrepareAndCacheActiveLocalTextures();
         }
 
-        public void OnMenuLoaded() => ClearWorldState();
+        public void OnMenuLoaded()
+        {
+            ClearWorldState();
+            optionsMenuSkinUi?.Cleanup();
+            wardrobeUi?.Cleanup();
+            EnsureCoroutineHost();
+        }
 
         public void OnLevelLoaded()
         {
             ClearWorldState();
             EnsureCoroutineHost();
             CharacterAssetLoader.LoadAssets(ctx.Log);
+            PrepareAndCacheActiveLocalTextures();
+            wardrobeUi?.RefreshPreview();
             if (PlayMakerGlobals.Instance?.Variables != null)
             {
                 playerUrineVar = PlayMakerGlobals.Instance.Variables.FindFsmFloat("PlayerUrine");
@@ -81,6 +125,7 @@ namespace OSC.Module.Players
                 ctx.Events.Unsubscribe<PlayerHeldItemEvent>(HandleHeldItemBridge);
                 ctx.Events.Unsubscribe<LocalPlayerSleepStateEvent>(HandleLocalSleepBridge);
                 ctx.Events.Unsubscribe<RemotePlayerSleepStateEvent>(HandleRemoteSleepBridge);
+                ctx.Events.Unsubscribe<ToggleSkinWardrobeEvent>(HandleToggleSkinWardrobe);
             }
             if (ctx?.Transport != null)
             {
@@ -88,15 +133,47 @@ namespace OSC.Module.Players
                 ctx.Transport.OnClientDisconnected -= HandleClientDisconnected;
             }
             ctx?.Router?.UnregisterModule(ModuleId);
+            optionsMenuSkinUi?.Cleanup();
+            wardrobeUi?.Cleanup();
+            texManager?.DisposeTextures();
+            appearanceSync?.Reset();
             ClearWorldState();
+            if (runtimeHostObj != null)
+            {
+                UnityEngine.Object.Destroy(runtimeHostObj);
+                runtimeHostObj = null;
+                coroutineHost = null;
+            }
         }
 
         private void EnsureCoroutineHost()
         {
-            if (runtimeHostObj != null) return;
-            runtimeHostObj = new GameObject("OSC_Players_CoroutineHost");
-            UnityEngine.Object.DontDestroyOnLoad(runtimeHostObj);
-            coroutineHost = runtimeHostObj.AddComponent<RuntimeCoroutineBridge>();
+            if (runtimeHostObj == null)
+            {
+                runtimeHostObj = new GameObject("OSC_Players_CoroutineHost");
+                UnityEngine.Object.DontDestroyOnLoad(runtimeHostObj);
+                coroutineHost = runtimeHostObj.AddComponent<RuntimeCoroutineBridge>();
+            }
+            if (coroutineHost != null)
+            {
+                coroutineHost.OnUpdateCallback = HandleBridgeUpdate;
+                coroutineHost.OnGuiCallback = HandleBridgeGui;
+            }
+        }
+
+        private void HandleBridgeUpdate()
+        {
+            if ((Input.GetKeyDown(KeyCode.F8) || Input.GetKeyDown(KeyCode.F9)) && GUIUtility.keyboardControl == 0)
+            {
+                wardrobeUi?.Toggle();
+            }
+            wardrobeUi?.OnUpdate();
+            appearanceSync?.OnUpdate();
+        }
+
+        private void HandleBridgeGui()
+        {
+            wardrobeUi?.OnGUI();
         }
 
         private void ClearWorldState()
@@ -104,6 +181,10 @@ namespace OSC.Module.Players
             foreach (var p in puppets.Values) p.Destroy();
             puppets.Clear();
             animTracker.Reset();
+            if (ctx?.Transport == null || !ctx.Transport.IsRunning)
+            {
+                appearanceSync?.Reset();
+            }
             localPlayer = null;
             localCc = null;
             localCamPivot = null;
@@ -116,6 +197,7 @@ namespace OSC.Module.Players
 
         public void OnUpdate()
         {
+            optionsMenuSkinUi?.TickUpdate();
             animTracker.IsLocalSeatedByBridge = localSeatedByBridge;
             animTracker.Tick(coroutineHost);
 
@@ -285,7 +367,11 @@ namespace OSC.Module.Players
             }
         }
 
-        private void HandleClientConnected(int clientId) => SendHandshake(ctx.LocalNickname);
+        private void HandleClientConnected(int clientId)
+        {
+            SendHandshake(ctx.LocalNickname);
+            appearanceSync?.OnClientConnected(clientId);
+        }
 
         private void HandleClientDisconnected(int clientId)
         {
@@ -295,6 +381,7 @@ namespace OSC.Module.Players
                 puppet.Destroy();
                 puppets.Remove(targetId);
             }
+            appearanceSync?.OnClientDisconnected(clientId);
         }
 
         private void HandleHandshakeRequest(PacketReader reader, int connectionId)
@@ -329,6 +416,7 @@ namespace OSC.Module.Players
 
         private void HandlePlayerSync(PacketReader reader, int connectionId)
         {
+            if (ctx == null || !ctx.IsInGameWorld) return;
             int playerId = reader.ReadInt32();
             if (playerId == ctx.Transport.LocalPlayerId || playerId < 0 || playerId > 32) return;
 
@@ -345,12 +433,18 @@ namespace OSC.Module.Players
                 puppet = new RemotePuppet(playerId, pos, Quaternion.Euler(0f, rotY, 0f), ctx.Log);
                 puppets[playerId] = puppet;
                 if (nicknames.TryGetValue(playerId, out string n)) puppet.SetNickname(n);
+                PlayerAppearanceState remoteAppearance = appearanceSync?.GetRemoteState(playerId);
+                if (remoteAppearance != null)
+                {
+                    puppet.ApplyAppearance(remoteAppearance, texManager);
+                }
             }
             puppet.UpdateTarget(pos, rotY, pitch, animState, lean, airborne);
         }
 
         private void HandlePlayerGesture(PacketReader reader, int connectionId)
         {
+            if (ctx == null || !ctx.IsInGameWorld) return;
             int playerId = reader.ReadInt32();
             if (playerId == ctx.Transport.LocalPlayerId) return;
             byte idx = reader.ReadByte();
@@ -366,6 +460,7 @@ namespace OSC.Module.Players
 
         private void HandlePlayerUrinate(PacketReader reader, int connectionId)
         {
+            if (ctx == null || !ctx.IsInGameWorld) return;
             int playerId = reader.ReadInt32();
             if (playerId == ctx.Transport.LocalPlayerId) return;
             bool peeing = reader.ReadBoolean();
@@ -388,6 +483,7 @@ namespace OSC.Module.Players
 
         private void HandlePlayerSwear(PacketReader reader, int connectionId)
         {
+            if (ctx == null || !ctx.IsInGameWorld) return;
             int playerId = reader.ReadInt32();
             if (playerId == ctx.Transport.LocalPlayerId) return;
             byte swearId = reader.ReadByte();
@@ -426,6 +522,58 @@ namespace OSC.Module.Players
             if (puppets.TryGetValue(evt.PlayerId, out var puppet))
             {
                 puppet.ApplySleepStateEvent(evt);
+            }
+        }
+
+        private void HandleToggleSkinWardrobe(ToggleSkinWardrobeEvent evt)
+        {
+            wardrobeUi?.Toggle();
+        }
+
+        private void HandleLocalAppearanceChanged()
+        {
+            if (isApplyingAppearanceChange) return;
+            isApplyingAppearanceChange = true;
+            try
+            {
+                PrepareAndCacheActiveLocalTextures();
+                appearanceSync?.BroadcastLocalAppearance();
+                optionsMenuSkinUi?.RefreshVisualsFromActive();
+                wardrobeUi?.RefreshPreview();
+            }
+            finally
+            {
+                isApplyingAppearanceChange = false;
+            }
+        }
+
+        private void HandleRemoteAppearanceReady(int playerId, PlayerAppearanceState state)
+        {
+            if (state != null && puppets.TryGetValue(playerId, out var puppet) && puppet != null)
+            {
+                puppet.ApplyAppearance(state, texManager);
+            }
+        }
+
+        private void PrepareAndCacheActiveLocalTextures()
+        {
+            if (skinProfiles?.Active == null || texManager == null) return;
+            for (int i = 0; i < 4; i++)
+            {
+                var slot = (CustomTexSlot)i;
+                string relPath = skinProfiles.Active.CustomRelativePaths[i];
+                if (string.IsNullOrEmpty(relPath)) continue;
+
+                if (texManager.TryPrepareLocalTexture(relPath, slot, out uint crc, out byte[] encodedBytes, out _, out string err))
+                {
+                    skinProfiles.Active.SetCustomTexture(slot, relPath, crc, encodedBytes != null ? encodedBytes.Length : 0);
+                    appearanceSync?.CacheLocalEncodedBytes(crc, encodedBytes);
+                }
+                else if (skinProfiles.Active.HasCustomTexture(slot))
+                {
+                    ctx?.Log?.Invoke($"[Игроки/Скины] Не удалось загрузить локальный скин '{relPath}' ({slot}): {err}");
+                    skinProfiles.Active.ClearCustomTexture(slot);
+                }
             }
         }
     }

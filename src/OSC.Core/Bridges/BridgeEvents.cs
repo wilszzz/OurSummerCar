@@ -183,4 +183,11 @@ namespace OSC.Core.Bridges
         public bool IsLocal;
         public Vector3 SpawnPosition;
     }
+
+    /// <summary>
+    /// Событие-мост для открытия/закрытия окна гардероба и студии кастомных скинов (по кнопке в F10 или клавише F9).
+    /// </summary>
+    public struct ToggleSkinWardrobeEvent
+    {
+    }
 }

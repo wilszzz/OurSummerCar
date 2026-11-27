@@ -69,10 +69,18 @@ namespace OSC.Module.Players
         private Color baseNametagColor;
         private readonly List<Collider> disabledColliders = new List<Collider>();
         private readonly Dictionary<GameObject, Vector3> itemOriginalScales = new Dictionary<GameObject, Vector3>();
+        private readonly Action<string> puppetLog;
+
+        private PlayerAppearanceState currentAppearance;
+        private CustomSkinTextureManager appearanceTexMgr;
+        private bool lastHelmetHiddenState;
+        private GameObject cachedHelmetVisual;
+        private float nextHelmetLookupTime;
 
         public RemotePuppet(int id, Vector3 initialPosition, Quaternion initialRotation, Action<string> log = null)
         {
             Id = id;
+            puppetLog = log;
             targetPosition = initialPosition;
             lastPosition = initialPosition;
             targetRotation = initialRotation;
@@ -106,8 +114,7 @@ namespace OSC.Module.Players
 
             nametagMesh = nametagObject.AddComponent<TextMesh>();
             nametagMesh.text = Nickname;
-            nametagMesh.fontSize = 32;
-            nametagMesh.characterSize = 0.042f;
+            nametagMesh.characterSize = 0.10f;
             nametagMesh.alignment = TextAlignment.Center;
             nametagMesh.anchor = TextAnchor.MiddleCenter;
             nametagMesh.color = baseNametagColor;
@@ -117,8 +124,7 @@ namespace OSC.Module.Players
             shadowObj.transform.localPosition = new Vector3(0.012f, -0.012f, 0.005f);
             shadowMesh = shadowObj.AddComponent<TextMesh>();
             shadowMesh.text = Nickname;
-            shadowMesh.fontSize = 32;
-            shadowMesh.characterSize = 0.042f;
+            shadowMesh.characterSize = 0.10f;
             shadowMesh.alignment = TextAlignment.Center;
             shadowMesh.anchor = TextAnchor.MiddleCenter;
             shadowMesh.color = new Color(0f, 0f, 0f, 0.85f);
@@ -298,9 +304,72 @@ namespace OSC.Module.Players
         public void StopGesture(int idx) => animController?.StopGesture(idx);
         public void PlaySwear(byte swearId) => animController?.PlaySwearAudio(swearId);
 
+        public void ApplyAppearance(PlayerAppearanceState state, CustomSkinTextureManager texManager)
+        {
+            if (state == null) return;
+            currentAppearance = state.Clone();
+            appearanceTexMgr = texManager;
+            bool helmetOn = IsHelmetVisualActive();
+            lastHelmetHiddenState = helmetOn;
+            if (characterModel != null)
+            {
+                CharacterAssetLoader.ApplyAppearance(characterModel, currentAppearance, appearanceTexMgr, helmetOn, puppetLog);
+            }
+        }
+
+        private bool IsHelmetVisualActive()
+        {
+            if (cachedHelmetVisual != null)
+            {
+                return cachedHelmetVisual.activeInHierarchy;
+            }
+            if (Time.realtimeSinceStartup < nextHelmetLookupTime)
+            {
+                return false;
+            }
+            nextHelmetLookupTime = Time.realtimeSinceStartup + 0.25f;
+
+            Transform found = null;
+            if (headPivot != null)
+            {
+                found = headPivot.Find("OSC_PuppetHelmetVisual");
+            }
+            if (found == null && RootObject != null)
+            {
+                found = RootObject.transform.Find("OSC_PuppetHelmetVisual");
+            }
+            if (found != null)
+            {
+                cachedHelmetVisual = found.gameObject;
+                return cachedHelmetVisual.activeInHierarchy;
+            }
+            return false;
+        }
+
         public void UpdateInterpolation(float deltaTime)
         {
             if (RootObject == null) return;
+
+            bool helmetOn = IsHelmetVisualActive();
+            if (helmetOn != lastHelmetHiddenState)
+            {
+                lastHelmetHiddenState = helmetOn;
+                if (characterModel != null)
+                {
+                    if (currentAppearance != null)
+                    {
+                        CharacterAssetLoader.ApplyAppearance(characterModel, currentAppearance, appearanceTexMgr, helmetOn, puppetLog);
+                    }
+                    else
+                    {
+                        Transform headEnd = characterModel.transform.Find("char/skeleton/pelvis/RotationBendPivot/spine_middle/spine_upper/headPivot/HeadRotationPivot/head/head_end");
+                        if (headEnd != null)
+                        {
+                            headEnd.gameObject.SetActive(!helmetOn);
+                        }
+                    }
+                }
+            }
 
             byte crouchLevel = (byte)((lastAnimState & 32) != 0 ? 2 : ((lastAnimState & 2) != 0 ? 1 : 0));
             bool isSleeping = bridgeSleepingInBed || (lastAnimState & 128) != 0;

@@ -280,13 +280,17 @@ namespace OSC.Module.WorldDomestic
 
             Color prevColor = GUI.color;
             TextAnchor prevAlign = GUI.skin.label.alignment;
+            bool canOverrideFontSize = GUI.skin.label.font != null && GUI.skin.label.font.dynamic;
             int prevSize = GUI.skin.label.fontSize;
 
             try
             {
                 GUI.color = Color.white;
                 GUI.skin.label.alignment = TextAnchor.MiddleCenter;
-                GUI.skin.label.fontSize = 20;
+                if (canOverrideFontSize)
+                {
+                    GUI.skin.label.fontSize = 20;
+                }
 
                 string statusText;
                 if (!IsNetworkRunning)
@@ -327,7 +331,10 @@ namespace OSC.Module.WorldDomestic
             {
                 GUI.color = prevColor;
                 GUI.skin.label.alignment = prevAlign;
-                GUI.skin.label.fontSize = prevSize;
+                if (canOverrideFontSize)
+                {
+                    GUI.skin.label.fontSize = prevSize;
+                }
             }
         }
 
@@ -588,7 +595,9 @@ namespace OSC.Module.WorldDomestic
             for (int i = 0; i < allGo.Length; i++)
             {
                 GameObject go = allGo[i];
-                if (go == null || go.name != "SleepTrigger") continue;
+                if (go == null || go.hideFlags != HideFlags.None) continue;
+                if (!go.activeInHierarchy && go.activeSelf && go.transform.parent == null) continue;
+                if (go.name != "SleepTrigger") continue;
                 if (go.name.StartsWith("OSC_CustomBed_", StringComparison.Ordinal)) continue;
                 HookBedTrigger(go);
             }
@@ -597,6 +606,15 @@ namespace OSC.Module.WorldDomestic
         private void HookBedTrigger(GameObject bedGo)
         {
             if (bedGo == null) return;
+            if (bedGo.hideFlags != HideFlags.None) return;
+            if (!bedGo.activeInHierarchy && bedGo.activeSelf && bedGo.transform.parent == null) return;
+            Vector3 ls = bedGo.transform.lossyScale;
+            if (float.IsNaN(ls.x) || float.IsNaN(ls.y) || float.IsNaN(ls.z) ||
+                Mathf.Abs(ls.x) < 0.001f || Mathf.Abs(ls.y) < 0.001f || Mathf.Abs(ls.z) < 0.001f)
+            {
+                return;
+            }
+
             int id = bedGo.GetInstanceID();
             if (hookedBedObjIds.Contains(id)) return;
 

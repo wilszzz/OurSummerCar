@@ -118,6 +118,13 @@ namespace OSC.Module.Items
             nextScanTime = 0f;
         }
 
+        internal static bool IsValidSceneObject(GameObject go)
+        {
+            return go != null
+                && go.hideFlags == HideFlags.None
+                && !(!go.activeInHierarchy && go.activeSelf && go.transform.parent == null);
+        }
+
         public void InitializeSceneObjects()
         {
             InitializeSpawner();
@@ -125,12 +132,12 @@ namespace OSC.Module.Items
             var rbs = Resources.FindObjectsOfTypeAll<Rigidbody>();
             for (int i = 0; i < rbs.Length; i++)
             {
-                if (rbs[i] == null || rbs[i].gameObject == null) continue;
+                if (rbs[i] == null || !IsValidSceneObject(rbs[i].gameObject)) continue;
                 RegisterCandidateObject(rbs[i].gameObject);
             }
 
             GameObject defaultCase = GameObject.Find("ITEMS/beercase0") ?? GameObject.Find("beercase0");
-            if (defaultCase != null)
+            if (IsValidSceneObject(defaultCase))
             {
                 TrackBeerCase(defaultCase);
             }
@@ -140,7 +147,7 @@ namespace OSC.Module.Items
 
         public void RegisterCandidateObject(GameObject go)
         {
-            if (go == null) return;
+            if (!IsValidSceneObject(go)) return;
             string nameLower = (go.name ?? string.Empty).ToLowerInvariant();
             if (nameLower.Contains("beer") && nameLower.Contains("case"))
             {
@@ -207,14 +214,14 @@ namespace OSC.Module.Items
                 var all = Resources.FindObjectsOfTypeAll<GameObject>();
                 for (int i = 0; i < all.Length; i++)
                 {
-                    if (all[i] != null && all[i].name == "Spawner" && all[i].transform.root == all[i].transform)
+                    if (IsValidSceneObject(all[i]) && all[i].name == "Spawner" && all[i].transform.root == all[i].transform)
                     {
                         spawnerGo = all[i];
                         break;
                     }
                 }
             }
-            if (spawnerGo == null) return;
+            if (!IsValidSceneObject(spawnerGo)) return;
 
             HookSpawnerChild(spawnerGo.transform.Find("CreateItems"), isShopbag: false);
             HookSpawnerChild(spawnerGo.transform.Find("CreateSpraycans"), isShopbag: false);
@@ -363,7 +370,7 @@ namespace OSC.Module.Items
 
         private void TrackShoppingBag(GameObject bag)
         {
-            if (bag == null) return;
+            if (!IsValidSceneObject(bag)) return;
             int hash = SceneHasher.GetHash(bag);
             if (unpackedBags.Contains(hash)) return;
             if (shoppingBags.TryGetValue(hash, out var existing) && existing.IsHooked) return;
@@ -466,7 +473,7 @@ namespace OSC.Module.Items
 
         private void TrackBeerCase(GameObject beerCase)
         {
-            if (beerCase == null) return;
+            if (!IsValidSceneObject(beerCase)) return;
             string lower = (beerCase.name ?? string.Empty).ToLowerInvariant();
             if (!lower.Contains("beer") || !lower.Contains("case")) return;
 
@@ -542,19 +549,16 @@ namespace OSC.Module.Items
             {
                 if (!beerCases.TryGetValue(caseHash, out var tracked) || tracked.CaseObject == null)
                 {
-                    GameObject go = SceneHasher.FindObjectByHash(caseHash) ?? GameObject.Find("ITEMS/beercase0") ?? GameObject.Find("beercase0");
-                    if (go != null)
+                    GameObject go = SceneHasher.FindObjectByHash(caseHash);
+                    if (go == null && beerCases.Count == 0)
+                    {
+                        go = GameObject.Find("ITEMS/beercase0") ?? GameObject.Find("beercase0");
+                    }
+
+                    if (IsValidSceneObject(go))
                     {
                         TrackBeerCase(go);
                         beerCases.TryGetValue(caseHash, out tracked);
-                        if (tracked == null && beerCases.Count == 1)
-                        {
-                            foreach (var kv in beerCases)
-                            {
-                                tracked = kv.Value;
-                                break;
-                            }
-                        }
                     }
                 }
 
@@ -572,11 +576,17 @@ namespace OSC.Module.Items
 
                 if (tracked.BottlesParent != null)
                 {
-                    while (tracked.BottlesParent.childCount > remaining && tracked.BottlesParent.childCount > 0)
+                    int currentCount = tracked.BottlesParent.childCount;
+                    int targetRemaining = Mathf.Clamp(remaining, 0, currentCount);
+                    for (int i = currentCount - 1; i >= targetRemaining; i--)
                     {
-                        Transform lastBottle = tracked.BottlesParent.GetChild(tracked.BottlesParent.childCount - 1);
-                        if (lastBottle != null) UnityEngine.Object.Destroy(lastBottle.gameObject);
-                        else break;
+                        Transform lastBottle = tracked.BottlesParent.GetChild(i);
+                        if (lastBottle != null)
+                        {
+                            lastBottle.SetParent(null, false);
+                            lastBottle.gameObject.SetActive(false);
+                            UnityEngine.Object.Destroy(lastBottle.gameObject);
+                        }
                     }
                 }
 

@@ -19,11 +19,75 @@ namespace OSC.Core.Runtime
         public List<IOscModule> Modules;
         public OscHostContext Context;
         public Action<string> LogError;
+        private float nextPingTime;
+        private int worldSettleFramesRemaining;
+        private float worldSettleDeadlineUnscaled;
+        private bool worldNetworkReady;
+        private bool pendingWorldNotify;
+
+        public void BeginWorldSettle(bool shouldNotifyNetwork)
+        {
+            worldNetworkReady = false;
+            worldSettleFramesRemaining = 15;
+            worldSettleDeadlineUnscaled = Time.unscaledTime + 0.8f;
+            pendingWorldNotify = shouldNotifyNetwork;
+        }
+
+        public void ResetWorldSettle()
+        {
+            worldNetworkReady = false;
+            pendingWorldNotify = false;
+            worldSettleFramesRemaining = 0;
+            worldSettleDeadlineUnscaled = 0f;
+        }
+
+        private void Awake()
+        {
+            Application.runInBackground = true;
+        }
 
         private void Update()
         {
-            Transport?.PollEvents();
-            if (Context == null || !Context.IsInGameWorld || Modules == null) return;
+            Application.runInBackground = true;
+
+            bool inWorld = Context != null && Context.IsInGameWorld;
+            if (!inWorld)
+            {
+                if (worldNetworkReady || pendingWorldNotify || worldSettleFramesRemaining > 0)
+                {
+                    ResetWorldSettle();
+                }
+            }
+            else if (!worldNetworkReady && (worldSettleFramesRemaining > 0 || pendingWorldNotify))
+            {
+                if (worldSettleFramesRemaining > 0)
+                {
+                    worldSettleFramesRemaining--;
+                }
+
+                if (worldSettleFramesRemaining <= 0 && Time.unscaledTime >= worldSettleDeadlineUnscaled)
+                {
+                    worldNetworkReady = true;
+                    if (pendingWorldNotify)
+                    {
+                        pendingWorldNotify = false;
+                        if (Transport != null && Transport.IsRunning)
+                        {
+                            Transport.NotifyGameWorldLoaded();
+                        }
+                    }
+                }
+            }
+
+            Transport?.PollEvents(inWorld && worldNetworkReady);
+
+            if (Transport != null && Transport.IsClient && Transport.IsRunning && Time.unscaledTime >= nextPingTime)
+            {
+                nextPingTime = Time.unscaledTime + 2.0f;
+                Transport.SendPing();
+            }
+
+            if (!inWorld || Modules == null) return;
 
             for (int i = 0; i < Modules.Count; i++)
             {
@@ -70,6 +134,7 @@ namespace OSC.Core.Runtime
         private Rect windowRect = new Rect(30, 30, 410, 620);
         private Vector2 windowScrollPos = Vector2.zero;
         private Vector2 logScrollPos = Vector2.zero;
+        private readonly object logLock = new object();
         private readonly List<string> recentLogs = new List<string>();
 
         private string playerNickname = "Player";
@@ -80,11 +145,13 @@ namespace OSC.Core.Runtime
 
         public void Initialize(string assetRootPath)
         {
+            Application.runInBackground = true;
             modulesFolder = Path.Combine(assetRootPath ?? string.Empty, "Modules");
             LoadSettings();
 
             transport = new NetworkTransport();
             transport.OnLog += AddLog;
+            transport.OnWorldReadyResyncRequested += HandlePeerWorldReadyResync;
 
             router = new PacketRouter(transport, AddLog);
             eventBus = new OscEventBus(AddLog);
@@ -152,12 +219,14 @@ namespace OSC.Core.Runtime
         public void OnMenuLoad()
         {
             if (context == null) return;
+            Application.runInBackground = true;
             if (context.IsInGameWorld && transport != null && transport.IsRunning)
             {
                 transport.Stop();
             }
 
             context.IsInGameWorld = false;
+            if (engineRunner != null) engineRunner.ResetWorldSettle();
             SceneHasher.Clear();
             ownership.Clear();
 
@@ -172,6 +241,7 @@ namespace OSC.Core.Runtime
         public void OnLoad()
         {
             if (context == null) return;
+            Application.runInBackground = true;
             EnsureEngineRunner();
 
             SceneHasher.Clear();
@@ -186,9 +256,24 @@ namespace OSC.Core.Runtime
 
             if (autoStartServer && transport != null && !transport.IsRunning && int.TryParse(portString, out int port))
             {
-                transport.StartServer(port);
+                transport.StartServer(port, quietIfPortBusy: true);
             }
+
+            if (engineRunner != null)
+            {
+                engineRunner.BeginWorldSettle(transport != null && transport.IsRunning);
+            }
+
             AddLog($"[Ядро] Мир загружен. Активно модулей: {loadedModules.Count}");
+        }
+
+        private void HandlePeerWorldReadyResync()
+        {
+            if (context != null && context.IsInGameWorld && transport != null && transport.IsServer)
+            {
+                AddLog("[Ядро] Клиент вошёл в игровой мир — повторная синхронизация состояния...");
+                transport.TriggerServerResyncToClients();
+            }
         }
 
         public void OnUpdate()
@@ -224,30 +309,34 @@ namespace OSC.Core.Runtime
             GUILayout.EndHorizontal();
 
             string statusStr = "<color=grey>● Отключен</color>";
-            if (transport != null && transport.IsRunning)
+            if (transport != null)
             {
-                if (transport.IsServer)
+                if (transport.IsConnecting)
                 {
-                    statusStr = $"<color=lime>● ХОСТ (Клиентов: {transport.ConnectedClientsCount})</color>";
+                    statusStr = "<color=yellow>● Подключение к хосту...</color>";
                 }
-                else if (transport.IsClient)
+                else if (transport.IsRunning)
                 {
-                    string ping = transport.LastPingRTT >= 0 ? $"{transport.LastPingRTT} мс" : "...";
-                    statusStr = $"<color=cyan>● КЛИЕНТ (Пинг: {ping})</color>";
+                    if (transport.IsServer)
+                    {
+                        statusStr = $"<color=lime>● ХОСТ (Клиентов: {transport.ConnectedClientsCount})</color>";
+                    }
+                    else if (transport.IsClient)
+                    {
+                        string ping = transport.LastPingRTT >= 0 ? $"{transport.LastPingRTT} мс" : "...";
+                        statusStr = $"<color=cyan>● КЛИЕНТ (Пинг: {ping})</color>";
+                    }
                 }
             }
             GUILayout.Label("Сеть: " + statusStr);
 
-            GUILayout.Space(4);
-            GUILayout.Label($"<b>Изолированные модули ({loadedModules.Count}):</b>");
-            for (int i = 0; i < loadedModules.Count; i++)
+            if (transport != null && (transport.IsRunning || transport.IsConnecting) && (context == null || !context.IsInGameWorld))
             {
-                var m = loadedModules[i];
-                GUILayout.Label($"  • <color=lime>{m.DisplayName}</color>: {m.StatusSummary}");
+                GUILayout.Label("<color=yellow>Загрузите сохранение (CONTINUE), синхронизация начнётся автоматически.</color>");
             }
 
             GUILayout.Space(6);
-            if (transport == null || !transport.IsRunning)
+            if (transport == null || (!transport.IsRunning && !transport.IsConnecting))
             {
                 GUILayout.BeginHorizontal();
                 GUILayout.Label("IP:", GUILayout.Width(25));
@@ -282,6 +371,13 @@ namespace OSC.Core.Runtime
                 }
                 GUILayout.EndHorizontal();
             }
+            else if (transport.IsConnecting)
+            {
+                if (GUILayout.Button("Отменить подключение"))
+                {
+                    transport.Stop();
+                }
+            }
             else
             {
                 if (GUILayout.Button("Остановить соединение"))
@@ -295,15 +391,40 @@ namespace OSC.Core.Runtime
             }
 
             GUILayout.Space(6);
+            if (GUILayout.Button("Гардероб / Свой Скин (F8 / F9)"))
+            {
+                eventBus?.Publish(new ToggleSkinWardrobeEvent());
+            }
+
+            GUILayout.Space(6);
+            GUILayout.Label($"<b>Изолированные модули ({loadedModules.Count}):</b>");
+            for (int i = 0; i < loadedModules.Count; i++)
+            {
+                var m = loadedModules[i];
+                GUILayout.Label($"  • <color=lime>{m.DisplayName}</color>: {m.StatusSummary}");
+            }
+
+            GUILayout.Space(6);
             GUILayout.BeginHorizontal();
             GUILayout.Label("<b>Журнал:</b>");
-            if (GUILayout.Button("Очистить", GUILayout.Width(70))) recentLogs.Clear();
+            if (GUILayout.Button("Очистить", GUILayout.Width(70)))
+            {
+                lock (logLock)
+                {
+                    recentLogs.Clear();
+                }
+            }
             GUILayout.EndHorizontal();
 
             logScrollPos = GUILayout.BeginScrollView(logScrollPos, GUI.skin.box, GUILayout.Height(150));
-            for (int i = 0; i < recentLogs.Count; i++)
+            string[] logSnapshot;
+            lock (logLock)
             {
-                GUILayout.Label(recentLogs[i]);
+                logSnapshot = recentLogs.ToArray();
+            }
+            for (int i = 0; i < logSnapshot.Length; i++)
+            {
+                GUILayout.Label(logSnapshot[i]);
             }
             GUILayout.EndScrollView();
 
@@ -352,8 +473,11 @@ namespace OSC.Core.Runtime
         private void AddLog(string message)
         {
             string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
-            recentLogs.Add(line);
-            if (recentLogs.Count > 80) recentLogs.RemoveAt(0);
+            lock (logLock)
+            {
+                recentLogs.Add(line);
+                if (recentLogs.Count > 80) recentLogs.RemoveAt(0);
+            }
             logScrollPos.y = float.MaxValue;
         }
     }
